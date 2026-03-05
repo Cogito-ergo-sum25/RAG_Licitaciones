@@ -1,0 +1,12 @@
+# Conexión a MySQL
+pymysql==1.1.0
+cryptography==41.0.4
+
+# Lector de Excel
+pandas==2.0.3
+
+# Cliente oficial de Ollama para Python
+ollama==0.1.6
+
+# Interfaz de usuario con Streamlit
+streamlit==1.24.0

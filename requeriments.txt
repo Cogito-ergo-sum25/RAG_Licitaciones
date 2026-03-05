@@ -1,9 +1,0 @@
-# Conexión a MySQL
-pymysql==1.1.0
-cryptography==41.0.4
-
-# Lector de PDFs
-pdfplumber==0.10.2
-
-# Cliente oficial de Ollama para Python
-ollama==0.1.6
