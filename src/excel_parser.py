@@ -38,6 +38,12 @@ def procesar_licitacion_excel(archivo_entrada):
             if indice_inicio != -1:
                 # Recortamos el texto para que empiece exactamente desde el marcador
                 texto_partida = texto_partida[indice_inicio:]
+                
+            # ELIMINAMOS EL TEXTO REPETITIVO DEL IMSS
+            texto_partida = texto_partida.replace("Referencia Catálogo/Manual:", "")
+            
+            # (Opcional) Quitamos los saltos de línea dobles que deja el texto borrado
+            texto_partida = texto_partida.replace("\n\n", "\n")
             # --------------------------------------
             
             # Guardamos el texto limpio en nuestro diccionario

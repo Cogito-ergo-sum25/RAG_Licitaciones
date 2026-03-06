@@ -2,34 +2,49 @@ import ollama
 import json
 import re 
 
-def evaluar_con_ia(texto_licitacion, json_equipo, modelo="llama3.1"):
-    print(f"Iniciando evaluación con el modelo {modelo} en tu RX 7600 XT...\n")
+def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
+    print(f"Iniciando evaluación profunda con el modelo {modelo}...\n")
     
-    # El "System Prompt" es la regla de oro. Aquí le decimos a la IA cómo comportarse.
     prompt_maestro = f"""
-    Eres un ingeniero biomédico experto en licitaciones públicas de equipo médico.
-    Tu tarea es comparar los requisitos de la licitación contra las especificaciones técnicas de un equipo en formato JSON.
+    Eres un perito dictaminador biomédico evaluando el cumplimiento técnico de un equipo médico para una licitación pública.
+    Tu trabajo es comparar los requisitos de la licitación contra el JSON de especificaciones del equipo propuesto.
     
-    REGLAS ESTRICTAS:
-    1. Evalúa punto por punto el texto de la licitación.
-    2. Usa ESTRICTAMENTE este código de colores para cada punto:
-       🟢 [Verde] Cumple. (Si el JSON lo supera o lo cumple exactamente)
-       🟡 [Amarillo] Parcial. (Si el JSON no lo menciona o falta un documento)
-       🔴 [Rojo] No cumple. (Si el JSON contradice el requisito)
-       🔵 [Azul] Similar. (Si la tecnología es equivalente)
-    3. Justifica brevemente tu respuesta basándote SOLO en los datos del JSON. No inventes características que no estén en el JSON.
-    4. Ignora los renglones que digan "Referencia Catálogo/Manual:"
+    REGLAS MATEMÁTICAS Y DE AUDITORÍA (INQUEBRANTABLES):
+    1. PROHIBIDO INFERIR: Si un dato no está en el JSON, o su valor es 0, null, o vacío [], NO asumas que lo cumple. Repórtalo como "Sin Información".
+    2. CONVERSIÓN DE UNIDADES: Antes de evaluar, unifica las unidades. Si la licitación pide cm y el JSON está en mm, conviértelo mentalmente (ej. 2050 mm = 205 cm).
+    3. RANGOS Y TOLERANCIAS: Si la licitación pide "210 cm +/- 10 cm", el rango aceptable es de 200 cm a 220 cm. Calcula esto antes de dar tu fallo.
+    
+    CÓDIGO DE EVALUACIÓN ESTRICTO (Usa exactamente estos emojis y categorías):
+    ⚪ [CUMPLE]: El equipo cumple exactamente con el requerimiento o cae perfectamente dentro del rango solicitado.
+    🟢 [SUPERA]: El equipo ofrece una especificación superior o un rango más amplio que el solicitado (ej. piden 20°, ofrece 46°).
+    🔵 [SIMILAR]: El equipo utiliza una tecnología distinta pero funcionalmente equivalente para el mismo propósito clínico.
+    🟡 [SIN INFORMACIÓN]: El catálogo (JSON) no menciona este punto, el valor es 0, false (cuando se pedía la característica) o está vacío. 
+    🔴 [NO CUMPLE]: La especificación del equipo es inferior, contradice o no alcanza el mínimo requerido.
+    
+    INSTRUCCIONES DE FORMATO (ESTRICTAS):
+    - Tu respuesta DEBE ser EXCLUSIVAMENTE una tabla en formato Markdown con dos columnas.
+    - Columna 1: "Requisito Original" (Copia aquí el texto del punto, ej. 1.1, 1.2...).
+    - Columna 2: "Dictamen Técnico" (Pon aquí el emoji, tu veredicto y la justificación citando el JSON).
+    - Ignora los renglones que digan "Referencia Catálogo/Manual:".
+    
+    EJEMPLO DE SALIDA ESPERADA:
+    | Requisito Original | Dictamen Técnico |
+    |---|---|
+    | 1.1.- Mesa quirúrgica electrohidráulica. | 🟢 [CUMPLE]: El JSON indica 'tipo_equipo': 'Mesa Quirúrgica Electrohidráulica'. |
     
     --- TEXTO DE LA LICITACIÓN ---
     {texto_licitacion}
     
-    --- ESPECIFICACIONES DEL EQUIPO (JSON) ---
+    --- ESPECIFICACIONES DEL EQUIPO PROPUESTO (JSON) ---
     {json_equipo}
     """
     
     try:
-        # Llamamos a Ollama localmente
         respuesta = ollama.chat(model=modelo, messages=[
+            {
+                'role': 'system',
+                'content': 'Eres un auditor estricto, matemático y analítico. No inventas datos ni asumes características que no estén escritas en el JSON.'
+            },
             {
                 'role': 'user',
                 'content': prompt_maestro
@@ -39,7 +54,6 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="llama3.1"):
         
     except Exception as e:
         print(f"❌ Error al conectar con Ollama: {e}")
-        print("¿Asegúrate de que Ollama esté corriendo en segundo plano y el modelo esté descargado!")
         return None
 
 def autocompletar_json_con_ia(texto_catalogo, json_plantilla, modelo="qwen2.5:14b"):
@@ -104,4 +118,48 @@ INSTRUCCIONES ESTRICTAS:
             
     except Exception as e:
         print(f"❌ Error al conectar con Ollama: {e}")
+        return None
+    
+def obtener_top_3_equipos(texto_licitacion, diccionario_equipos, modelo="qwen2.5:14b"):
+    print(f"Iniciando escaneo rápido de todo el inventario con {modelo}...\n")
+    
+    # Recortamos la licitación para el escaneo rápido (solo necesitamos las características principales)
+    texto_corto = texto_licitacion[:4000]
+    
+    prompt = f"""
+    Eres un director de ingeniería biomédica seleccionando el equipo ideal para una licitación.
+    Analiza los requisitos de la licitación y compáralos contra nuestro catálogo disponible.
+    
+    <LICITACION>
+    {texto_corto}
+    </LICITACION>
+    
+    <CATALOGO_DISPONIBLE>
+    {json.dumps(diccionario_equipos, ensure_ascii=False)}
+    </CATALOGO_DISPONIBLE>
+    
+    INSTRUCCIONES ESTRICTAS:
+    1. Selecciona los 3 equipos de nuestro catálogo que mejor cumplan con la licitación (o menos si hay pocas opciones).
+    2. Devuelve tu respuesta en formato Markdown con el siguiente formato para cada equipo:
+       - **[Marca] [Modelo]**: [Porcentaje estimado de compatibilidad]%
+       - **Por qué:** [Explicación de 2 líneas de sus puntos fuertes y qué le falta]
+    3. NO uses formato JSON. Sé directo y analítico.
+    """
+    
+    try:
+        respuesta = ollama.chat(model=modelo, messages=[
+            {
+                'role': 'system',
+                'content': 'Eres un recomendador experto. Sé conciso y analítico.'
+            },
+            {
+                'role': 'user',
+                'content': prompt
+            }
+        ])
+        
+        return respuesta['message']['content']
+        
+    except Exception as e:
+        print(f"❌ Error al conectar con Ollama en el ranking: {e}")
         return None

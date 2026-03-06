@@ -1,8 +1,10 @@
 import streamlit as st
 import json
+
 from src.excel_parser import procesar_licitacion_excel
-from src.llm_engine import evaluar_con_ia
+from src.llm_engine import evaluar_con_ia, autocompletar_json_con_ia, obtener_top_3_equipos
 from src.db_client import obtener_todos_los_productos, obtener_json_producto, guardar_json_producto, obtener_equipos_por_tag
+from src.exporter import exportar_excel, exportar_word
 
 st.set_page_config(page_title="Evaluador Intevi", page_icon="🏥", layout="wide")
 
@@ -10,6 +12,121 @@ st.title("🏥 Sistema Evaluador de Licitaciones Intevi")
 
 # --- CREAMOS DOS PESTAÑAS ---
 tab1, tab2 = st.tabs(["🚀 Modo Evaluación IA", "📦 Gestión de Catálogos (CRUD JSON)"])
+
+# ==========================================
+# PESTAÑA 1: EL EVALUADOR DE LICITACIONES
+# ==========================================
+with tab1:
+    st.markdown("Sube tu archivo de propuestas en Excel, encuentra tus mejores candidatos y evalúa a detalle.")
+
+    # Inicializamos la memoria para el ranking
+    if "ranking_actual" not in st.session_state:
+        st.session_state.ranking_actual = ""
+
+    archivo_excel = st.file_uploader("Sube tu archivo Propuestas.xlsx", type=['xlsx'])
+
+    if archivo_excel is not None:
+        with st.spinner('Procesando hojas del Excel...'):
+            diccionario_partidas = procesar_licitacion_excel(archivo_excel)
+        
+        if diccionario_partidas:
+            st.success(f"¡Excel cargado! Se encontraron {len(diccionario_partidas)} partidas.")
+            
+            # Selector de Partida
+            lista_hojas = list(diccionario_partidas.keys())
+            partida_seleccionada = st.selectbox("Selecciona la partida a analizar:", lista_hojas)
+            
+            # Autocategorización
+            partes_nombre = partida_seleccionada.split("-")
+            tag_detectado = partes_nombre[1] if len(partes_nombre) > 1 else "DESCONOCIDO"
+            
+            texto_partida = diccionario_partidas[partida_seleccionada]
+            
+            with st.expander("Ver texto original extraído de la licitación"):
+                st.text(texto_partida)
+
+            st.divider()
+            
+            # Buscamos en la BD los equipos compatibles
+            equipos_compatibles = obtener_equipos_por_tag(tag_detectado)
+            
+            if not equipos_compatibles:
+                st.warning(f"No tienes equipos guardados con el tag '{tag_detectado}' en tu base de datos.")
+            else:
+                st.markdown(f"### 1️⃣ Fase de Pre-Filtro: Encontrar el mejor candidato")
+                st.info(f"Se encontraron {len(equipos_compatibles)} equipos en la categoría '{tag_detectado}'.")
+                
+                # --- BOTÓN DE RANKING ---
+                if st.button("⚡ Buscar Mejores Opciones (Top 3)", type="secondary"):
+                    with st.spinner("La IA está leyendo todo tu inventario para encontrar los mejores matches..."):
+                        # Preparamos un diccionario limpio para mandarle a la IA
+                        catalogo_para_ia = {
+                            f"{e['marca']} {e['modelo']}": e['json_limpio'] 
+                            for e in equipos_compatibles
+                        }
+                        # Llamamos al nuevo escáner
+                        st.session_state.ranking_actual = obtener_top_3_equipos(texto_partida, catalogo_para_ia, modelo="qwen2.5:14b")
+                
+                # Mostramos el resultado del ranking si existe en memoria
+                if st.session_state.ranking_actual:
+                    st.success("Resultados del escaneo rápido:")
+                    st.markdown(st.session_state.ranking_actual)
+                
+                st.divider()
+                
+                # --- FASE DE EVALUACIÓN DETALLADA ---
+                st.markdown("### 2️⃣ Fase de Evaluación: Dictamen Detallado")
+                st.write("Con base en las recomendaciones de arriba, selecciona a tu candidato final para generar el reporte de cumplimiento.")
+                
+                opciones_equipos = {f"[{e['marca']}] {e['nombre']} - {e['modelo']}": e for e in equipos_compatibles}
+                equipo_seleccionado = st.selectbox("Selecciona el equipo definitivo:", list(opciones_equipos.keys()))
+                
+                datos_equipo_real = opciones_equipos[equipo_seleccionado]
+                json_para_ia = json.dumps(datos_equipo_real['json_limpio'], indent=4, ensure_ascii=False)
+                
+                # --- MEMORIA PARA EL DICTAMEN ---
+                # Inicializamos la variable en memoria si no existe
+                if "dictamen_generado" not in st.session_state:
+                    st.session_state.dictamen_generado = None
+
+                # Evaluamos a profundidad
+                if st.button("🚀 Generar Dictamen Técnico por Colores", type="primary"):
+                    with st.spinner("Generando análisis detallado punto por punto..."):
+                        resultado = evaluar_con_ia(texto_partida, json_para_ia, modelo="qwen2.5:14b")
+                        
+                        if resultado:
+                            # Lo guardamos en la memoria indestructible de Streamlit
+                            st.session_state.dictamen_generado = resultado
+
+                # --- ZONA DE VISUALIZACIÓN Y DESCARGA ---
+                # Esta zona está FUERA del botón, así que sobrevive a las recargas
+                if st.session_state.dictamen_generado:
+                    st.subheader("Dictamen Técnico Oficial")
+                    st.markdown(st.session_state.dictamen_generado)
+                    
+                    st.divider()
+                    st.markdown("### 💾 Exportar Dictamen")
+                    st.write("Selecciona el formato para descargar tu matriz de cumplimiento:")
+                    
+                    col_dl1, col_dl2 = st.columns(2)
+                    
+                    with col_dl1:
+                        excel_data = exportar_excel(st.session_state.dictamen_generado, partida_seleccionada, equipo_seleccionado)
+                        st.download_button(
+                            label="📊 Descargar Excel (.xlsx)", 
+                            data=excel_data, 
+                            file_name=f"Dictamen_{partida_seleccionada}.xlsx", 
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                        
+                    with col_dl2:
+                        word_data = exportar_word(st.session_state.dictamen_generado, partida_seleccionada, equipo_seleccionado)
+                        st.download_button(
+                            label="📄 Descargar Word (.docx)", 
+                            data=word_data, 
+                            file_name=f"Dictamen_{partida_seleccionada}.docx", 
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
 
 # ==========================================
 # PESTAÑA 2: EL CRUD DE TUS PRODUCTOS
@@ -201,65 +318,3 @@ with tab2:
                     st.error(mensaje)
 
 
-# ==========================================
-# PESTAÑA 1: EL EVALUADOR DE LICITACIONES
-# ==========================================
-with tab1:
-    st.markdown("Sube tu archivo de propuestas en Excel y evalúa los anexos técnicos contra tu inventario real.")
-
-    archivo_excel = st.file_uploader("Sube tu archivo Propuestas.xlsx", type=['xlsx'])
-
-    if archivo_excel is not None:
-        with st.spinner('Procesando hojas del Excel...'):
-            diccionario_partidas = procesar_licitacion_excel(archivo_excel)
-        
-        if diccionario_partidas:
-            st.success(f"¡Excel cargado! Se encontraron {len(diccionario_partidas)} partidas.")
-            
-            # Selector de Partida
-            lista_hojas = list(diccionario_partidas.keys())
-            partida_seleccionada = st.selectbox("Selecciona la partida a evaluar:", lista_hojas)
-            
-            # --- LA MAGIA DEL AUTO-FILTRO ---
-            # Cortamos el nombre "I-MESAS-5316..." en los guiones y agarramos "MESAS"
-            partes_nombre = partida_seleccionada.split("-")
-            tag_detectado = partes_nombre[1] if len(partes_nombre) > 1 else "DESCONOCIDO"
-            
-            st.info(f"🧠 **Filtro Inteligente:** Se detectó la categoría `{tag_detectado}`. Buscando equipos compatibles en tu inventario...")
-            
-            texto_partida = diccionario_partidas[partida_seleccionada]
-            
-            with st.expander("Ver texto original extraído de la licitación"):
-                st.text(texto_partida)
-
-            st.divider()
-            
-            # Buscamos en la BD los equipos que hagan match con el Tag
-            equipos_compatibles = obtener_equipos_por_tag(tag_detectado)
-            
-            if not equipos_compatibles:
-                st.warning(f"No tienes equipos guardados con el tag '{tag_detectado}' en tu base de datos. ¡Ve a la pestaña de Gestión de Catálogos a darlos de alta!")
-            else:
-                st.subheader("Selección de Equipo Propuesto")
-                
-                # Armamos el menú desplegable con las marcas reales
-                opciones_equipos = {f"[{e['marca']}] {e['nombre']} - {e['modelo']}": e for e in equipos_compatibles}
-                equipo_seleccionado = st.selectbox("Selecciona el equipo para hacer el match:", list(opciones_equipos.keys()))
-                
-                # Extraemos el JSON real del equipo seleccionado
-                datos_equipo_real = opciones_equipos[equipo_seleccionado]
-                json_para_ia = json.dumps(datos_equipo_real['json_limpio'], indent=4, ensure_ascii=False)
-                
-                with st.expander("Ver especificaciones del equipo seleccionado (JSON)"):
-                    st.code(json_para_ia, language='json')
-
-                # Evaluamos de verdad
-                if st.button("🚀 Evaluar Partida vs Equipo", type="primary", key="btn_evaluar"):
-                    with st.spinner("Tu RX 7600 XT está cruzando los datos punto por punto con Qwen..."):
-                        # Le mandamos el texto completo de la partida y el JSON real. 
-                        # Sugiero usar qwen2.5:14b aquí también porque razona mejor la lógica de "Cumple / No Cumple"
-                        resultado = evaluar_con_ia(texto_partida, json_para_ia, modelo="qwen2.5:14b")
-                        
-                        if resultado:
-                            st.subheader("Dictamen Técnico")
-                            st.markdown(resultado)
