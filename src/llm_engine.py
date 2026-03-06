@@ -1,4 +1,6 @@
 import ollama
+import json
+import re 
 
 def evaluar_con_ia(texto_licitacion, json_equipo, modelo="llama3.1"):
     print(f"Iniciando evaluación con el modelo {modelo} en tu RX 7600 XT...\n")
@@ -38,4 +40,68 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="llama3.1"):
     except Exception as e:
         print(f"❌ Error al conectar con Ollama: {e}")
         print("¿Asegúrate de que Ollama esté corriendo en segundo plano y el modelo esté descargado!")
+        return None
+
+def autocompletar_json_con_ia(texto_catalogo, json_plantilla, modelo="qwen2.5:14b"):
+    print(f"Extrayendo datos con el modelo pesado {modelo}... Esto tomará su tiempo...\n")
+    
+    # Un límite de 30,000 caracteres (unas 15 páginas) es el punto dulce para Qwen 2.5
+    texto_seguro = texto_catalogo[:30000] 
+    
+    # Fíjate cómo el texto está encerrado en XML tags y las instrucciones van al final
+    prompt = f"""
+Analiza el siguiente documento y extrae la información técnica.
+
+<DOCUMENTO>
+{texto_seguro}
+</DOCUMENTO>
+
+INSTRUCCIONES ESTRICTAS:
+1. Extrae los valores técnicos del <DOCUMENTO> y úsalos para llenar esta <PLANTILLA_BASE>.
+2. AGREGA nuevas llaves (keys) al JSON si encuentras datos relevantes (accesorios, voltajes, dimensiones, materiales).
+3. TRADUCE AL ESPAÑOL TODAS LAS LLAVES NUEVAS Y SUS VALORES. Aunque el catálogo esté en inglés u otro idioma, las llaves y el contenido del JSON deben generarse estrictamente en español (ej. usa "dimensiones_cabezal_cm" en lugar de "head_dimensions").
+4. Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido. No escribas saludos, ni resúmenes, ni viñetas.
+
+<PLANTILLA_BASE>
+{json_plantilla}
+</PLANTILLA_BASE>
+"""
+    
+    try:
+        # Aquí le quitamos el format='json' porque a veces buguea a Qwen.
+        # Mejor confiamos en nuestro extractor Regex de abajo.
+        respuesta = ollama.chat(model=modelo, messages=[
+            {
+                'role': 'system',
+                'content': 'Eres una API automatizada. Recibes texto y devuelves exclusivamente código JSON puro que empieza con { y termina con }. Cero texto conversacional.'
+            },
+            {
+                'role': 'user',
+                'content': prompt
+            }
+        ])
+        
+        texto_ia = respuesta['message']['content']
+        
+        # --- EL EXTRACTOR NINJA (REGEX) ---
+        # Busca todo lo que esté entre el primer "{" y el último "}"
+        match = re.search(r'\{.*\}', texto_ia, re.DOTALL)
+        
+        if match:
+            texto_json_limpio = match.group(0)
+            try:
+                # Validamos que sea un JSON real
+                json_validado = json.loads(texto_json_limpio)
+                return json.dumps(json_validado, indent=4, ensure_ascii=False)
+            except json.JSONDecodeError:
+                print("❌ La IA generó un JSON roto.")
+                print("Respuesta cruda:", texto_json_limpio)
+                return None
+        else:
+            print("❌ No se encontró ningún formato JSON en la respuesta de la IA.")
+            print("Respuesta cruda:", texto_ia)
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error al conectar con Ollama: {e}")
         return None
