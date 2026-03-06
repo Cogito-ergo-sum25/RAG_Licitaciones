@@ -6,32 +6,27 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
     print(f"Iniciando evaluación profunda con el modelo {modelo}...\n")
     
     prompt_maestro = f"""
-    Eres un perito dictaminador biomédico evaluando el cumplimiento técnico de un equipo médico para una licitación pública.
-    Tu trabajo es comparar los requisitos de la licitación contra el JSON de especificaciones del equipo propuesto.
+    Eres un perito dictaminador biomédico evaluando el cumplimiento técnico de un equipo médico para una licitación del IMSS.
+    Compara los requisitos de la licitación contra el JSON del equipo.
     
-    REGLAS MATEMÁTICAS Y DE AUDITORÍA (INQUEBRANTABLES):
-    1. PROHIBIDO INFERIR: Si un dato no está en el JSON, o su valor es 0, null, o vacío [], NO asumas que lo cumple. Repórtalo como "Sin Información".
-    2. CONVERSIÓN DE UNIDADES: Antes de evaluar, unifica las unidades. Si la licitación pide cm y el JSON está en mm, conviértelo mentalmente (ej. 2050 mm = 205 cm).
-    3. RANGOS Y TOLERANCIAS: Si la licitación pide "210 cm +/- 10 cm", el rango aceptable es de 200 cm a 220 cm. Calcula esto antes de dar tu fallo.
-    
-    CÓDIGO DE EVALUACIÓN ESTRICTO (Usa exactamente estos emojis y categorías):
-    ⚪ [CUMPLE]: El equipo cumple exactamente con el requerimiento o cae perfectamente dentro del rango solicitado.
-    🟢 [SUPERA]: El equipo ofrece una especificación superior o un rango más amplio que el solicitado (ej. piden 20°, ofrece 46°).
-    🔵 [SIMILAR]: El equipo utiliza una tecnología distinta pero funcionalmente equivalente para el mismo propósito clínico.
-    🟡 [SIN INFORMACIÓN]: El catálogo (JSON) no menciona este punto, el valor es 0, false (cuando se pedía la característica) o está vacío. 
-    🔴 [NO CUMPLE]: La especificación del equipo es inferior, contradice o no alcanza el mínimo requerido.
-    
-    INSTRUCCIONES DE FORMATO (ESTRICTAS):
-    - Tu respuesta DEBE ser EXCLUSIVAMENTE una tabla en formato Markdown con dos columnas.
-    - Columna 1: "Requisito Original" (Copia aquí el texto del punto, ej. 1.1, 1.2...).
-    - Columna 2: "Dictamen Técnico" (Pon aquí el emoji, tu veredicto y la justificación citando el JSON).
-    - Ignora los renglones que digan "Referencia Catálogo/Manual:".
-    
-    EJEMPLO DE SALIDA ESPERADA:
+    REGLAS DE EVALUACIÓN Y COLORES (INQUEBRANTABLES):
+    🟢 [CUMPLE / SUPERA]: El equipo cumple exactamente o SUPERA el requerimiento. 
+        - Ejemplo: Piden 185 kg, el JSON dice 450 kg -> 🟢 [CUMPLE / SUPERA].
+        - Ejemplo: Piden 210 cm +/- 10 cm, el JSON dice 205 cm -> 🟢 [CUMPLE / SUPERA].
+    🔵 [SIMILAR]: El equipo no cumple exactamente al 100%, pero el rango o tecnología es similar y funcionalmente aceptable.
+        - Ejemplo: Piden diámetro de 7 a 30 cm, el JSON dice de 12 a 30 cm -> 🔵 [SIMILAR].
+    🟡 [SIN INFORMACIÓN]: El catálogo/JSON no menciona este punto, está vacío [], o el valor es 0. PROHIBIDO INFERIR.
+        - Ejemplo: Piden manuales y el JSON no dice nada -> 🟡 [SIN INFORMACIÓN].
+        - Ejemplo: Piden accesorios y el array está vacío -> 🟡 [SIN INFORMACIÓN].
+    🔴 [NO CUMPLE]: La especificación del equipo es inferior, contradice o no alcanza el requerimiento.
+        - Ejemplo: Piden tablero giratorio y el JSON dice false -> 🔴 [NO CUMPLE].
+
+    FORMATO DE SALIDA (ESTRICTO MARKDOWN TABLE):
     | Requisito Original | Dictamen Técnico |
     |---|---|
-    | 1.1.- Mesa quirúrgica electrohidráulica. | 🟢 [CUMPLE]: El JSON indica 'tipo_equipo': 'Mesa Quirúrgica Electrohidráulica'. |
-    
+    | 1.1.- Texto del requisito | 🟢 [CUMPLE / SUPERA]: Justificación citando el JSON exacto. |
+    | 1.2.- Texto del requisito | 🟡 [SIN INFORMACIÓN]: El JSON no especifica este dato. |
+
     --- TEXTO DE LA LICITACIÓN ---
     {texto_licitacion}
     
@@ -43,7 +38,7 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
         respuesta = ollama.chat(model=modelo, messages=[
             {
                 'role': 'system',
-                'content': 'Eres un auditor estricto, matemático y analítico. No inventas datos ni asumes características que no estén escritas en el JSON.'
+                'content': 'Eres un auditor estricto. Respondes ÚNICAMENTE con una tabla Markdown. Citas los valores exactos del JSON. No inventas datos.'
             },
             {
                 'role': 'user',
@@ -59,22 +54,22 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
 def autocompletar_json_con_ia(texto_catalogo, json_plantilla, modelo="qwen2.5:14b"):
     print(f"Extrayendo datos con el modelo pesado {modelo}... Esto tomará su tiempo...\n")
     
-    # Un límite de 30,000 caracteres (unas 15 páginas) es el punto dulce para Qwen 2.5
     texto_seguro = texto_catalogo[:30000] 
     
-    # Fíjate cómo el texto está encerrado en XML tags y las instrucciones van al final
     prompt = f"""
-Analiza el siguiente documento y extrae la información técnica.
+Analiza el siguiente catálogo médico y extrae la información técnica pura.
 
-<DOCUMENTO>
+<CATALOGO>
 {texto_seguro}
-</DOCUMENTO>
+</CATALOGO>
 
-INSTRUCCIONES ESTRICTAS:
-1. Extrae los valores técnicos del <DOCUMENTO> y úsalos para llenar esta <PLANTILLA_BASE>.
-2. AGREGA nuevas llaves (keys) al JSON si encuentras datos relevantes (accesorios, voltajes, dimensiones, materiales).
-3. TRADUCE AL ESPAÑOL TODAS LAS LLAVES NUEVAS Y SUS VALORES. Aunque el catálogo esté en inglés u otro idioma, las llaves y el contenido del JSON deben generarse estrictamente en español (ej. usa "dimensiones_cabezal_cm" en lugar de "head_dimensions").
-4. Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido. No escribas saludos, ni resúmenes, ni viñetas.
+INSTRUCCIONES DE EXTRACCIÓN (NIVEL PERITO):
+1. Extrae los valores y llena la <PLANTILLA_BASE>.
+2. IGNORA el texto de marketing ("la mejor calidad", "innovador"). Ve directo a los números, dimensiones, materiales y capacidades.
+3. ESTANDARIZA: Si el catálogo dice "2050 mm", conviértelo lógicamente a centímetros si la plantilla lo pide en cm (ej. 205).
+4. BOOLEANOS: Si el catálogo menciona una característica (ej. "incluye batería"), pon `true`. Si no la menciona en absoluto, pon `false` o `null` (NO asumas que la tiene).
+5. TRADUCCIÓN: Traduce todo al español técnico de México (ej. "Stainless steel" -> "Acero inoxidable").
+6. ACCESORIOS: Haz una lista exhaustiva de todos los accesorios enlistados. Si no hay lista, déjalo vacío [].
 
 <PLANTILLA_BASE>
 {json_plantilla}
@@ -82,42 +77,26 @@ INSTRUCCIONES ESTRICTAS:
 """
     
     try:
-        # Aquí le quitamos el format='json' porque a veces buguea a Qwen.
-        # Mejor confiamos en nuestro extractor Regex de abajo.
+        import re
         respuesta = ollama.chat(model=modelo, messages=[
-            {
-                'role': 'system',
-                'content': 'Eres una API automatizada. Recibes texto y devuelves exclusivamente código JSON puro que empieza con { y termina con }. Cero texto conversacional.'
-            },
-            {
-                'role': 'user',
-                'content': prompt
-            }
+            {'role': 'system', 'content': 'Eres un extractor de datos JSON puro y estricto. Cero conversacional.'},
+            {'role': 'user', 'content': prompt}
         ])
         
         texto_ia = respuesta['message']['content']
-        
-        # --- EL EXTRACTOR NINJA (REGEX) ---
-        # Busca todo lo que esté entre el primer "{" y el último "}"
         match = re.search(r'\{.*\}', texto_ia, re.DOTALL)
         
         if match:
             texto_json_limpio = match.group(0)
             try:
-                # Validamos que sea un JSON real
+                import json
                 json_validado = json.loads(texto_json_limpio)
                 return json.dumps(json_validado, indent=4, ensure_ascii=False)
             except json.JSONDecodeError:
-                print("❌ La IA generó un JSON roto.")
-                print("Respuesta cruda:", texto_json_limpio)
                 return None
-        else:
-            print("❌ No se encontró ningún formato JSON en la respuesta de la IA.")
-            print("Respuesta cruda:", texto_ia)
-            return None
-            
+        return None
     except Exception as e:
-        print(f"❌ Error al conectar con Ollama: {e}")
+        print(f"❌ Error con Ollama: {e}")
         return None
     
 def obtener_top_3_equipos(texto_licitacion, diccionario_equipos, modelo="qwen2.5:14b"):

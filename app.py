@@ -1,6 +1,6 @@
 import streamlit as st
 import json
-
+from src.pdf_parser import extraer_texto_pdf
 from src.excel_parser import procesar_licitacion_excel
 from src.llm_engine import evaluar_con_ia, autocompletar_json_con_ia, obtener_top_3_equipos
 from src.db_client import obtener_todos_los_productos, obtener_json_producto, guardar_json_producto, obtener_equipos_por_tag
@@ -167,6 +167,41 @@ with tab2:
             opciones_productos = {f"[{p['marca']}] {p['nombre']} - {p['modelo']} (ID: {p['id_producto']})": p['id_producto'] for p in productos_filtrados}
             producto_seleccionado = st.selectbox("1. Selecciona el Producto a editar:", list(opciones_productos.keys()))
             id_prod = opciones_productos[producto_seleccionado]
+            datos_prod = next(p for p in productos_filtrados if p['id_producto'] == id_prod)
+            st.markdown("### 📦 Ficha Comercial del Equipo")
+            # Dividimos en 2 columnas: 1/3 para imagen, 2/3 para datos
+            col_img, col_datos = st.columns([1, 2])
+            
+            with col_img:
+                # Si hay URL de imagen, la mostramos, si no, un mensaje
+                if datos_prod.get('imagen_url'):
+                    st.image(datos_prod['imagen_url'], use_container_width=True)
+                else:
+                    st.info("📷 Sin imagen disponible")
+                    
+                # Botón directo al PDF si existe
+                if datos_prod.get('ficha_tecnica_url'):
+                    st.link_button("📄 Ver Ficha Técnica Original", datos_prod['ficha_tecnica_url'], use_container_width=True)
+
+            with col_datos:
+                # Fila 1 de tarjetas
+                c1, c2, c3 = st.columns(3)
+                c1.metric("📌 Marca", datos_prod.get('marca') or 'N/A')
+                c2.metric("🏷️ Modelo", datos_prod.get('modelo') or 'N/A')
+                c3.metric("📦 SKU", datos_prod.get('sku') or 'N/A')
+                
+                # Fila 2 de tarjetas
+                c4, c5, c6 = st.columns(3)
+                c4.metric("⚙️ Tipo Producto", datos_prod.get('tipo') or 'N/A')
+                c5.metric("📑 Clasificación", datos_prod.get('clasificacion') or 'N/A')
+                c6.metric("🌎 País de Origen", datos_prod.get('pais') or 'N/A')
+                
+                # Certificaciones al final porque pueden ser muchas
+                st.markdown(f"**🏅 Certificaciones:** {datos_prod.get('certificaciones') or 'Ninguna registrada'}")
+                
+            st.divider()
+
+
             
             # Obtenemos el JSON actual de la base de datos
             json_actual = obtener_json_producto(id_prod)
@@ -276,30 +311,24 @@ with tab2:
                 st.session_state.json_editor = json.dumps(plantilla, indent=4, ensure_ascii=False)
                 st.rerun()
 
-            # --- AUTOCOMPLETADO CON IA ---
+           # --- AUTOCOMPLETADO CON IA ---
             st.divider()
             st.markdown("### 🤖 Autocompletado Inteligente")
             
-            pdf_catalogo = st.file_uploader("Sube el PDF del equipo (Ej. Catálogo_AMTAI.pdf)", type=['pdf'])
+            pdf_catalogo = st.file_uploader("Sube el PDF del equipo (Ej. Catálogo_DARSS.pdf)", type=['pdf'])
             
             if pdf_catalogo and st.button("✨ Autocompletar con IA"):
-                with st.spinner("Leyendo PDF y extrayendo datos técnicos..."):
-                    import pdfplumber
-                    texto_pdf = ""
-                    with pdfplumber.open(pdf_catalogo) as pdf:
-                        for pagina in pdf.pages:
-                            texto_pagina = pagina.extract_text()
-                            if texto_pagina:
-                                texto_pdf += texto_pagina + "\n"
+                with st.spinner("Convirtiendo PDF a Markdown y extrayendo con Qwen..."):
+                    
+                    # Llamamos a nuestra herramienta actualizada
+                    texto_pdf_markdown = extraer_texto_pdf(pdf_catalogo)
                     
                     from src.llm_engine import autocompletar_json_con_ia
-                    # Le mandamos a la IA lo que sea que esté en la memoria actual
-                    nuevo_json = autocompletar_json_con_ia(texto_pdf, st.session_state.json_editor)
+                    nuevo_json = autocompletar_json_con_ia(texto_pdf_markdown, st.session_state.json_editor, modelo="qwen2.5:14b")
                     
                     if nuevo_json:
-                        # Guardamos el resultado mágico en la memoria temporal
                         st.session_state.json_editor = nuevo_json 
-                        st.rerun() # Refrescamos para que se vea en el cuadro de texto
+                        st.rerun()
 
             # --- ÁREA DE EDICIÓN Y GUARDADO ---
             st.divider()

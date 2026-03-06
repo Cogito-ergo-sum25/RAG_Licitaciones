@@ -12,21 +12,32 @@ def obtener_conexion():
     )
 
 def obtener_todos_los_productos():
-    """Trae la lista de productos haciendo JOIN con sus marcas y tipos"""
+    """Trae la lista de productos haciendo JOIN con TODAS sus tablas relacionales"""
     try:
         conexion = obtener_conexion()
         with conexion.cursor() as cursor:
-            # Hacemos JOIN para traer los nombres reales de la marca y el tipo
+            # Hacemos JOIN de marcas, tipos, clasificaciones, paises y certificaciones
             sql = """
                 SELECT 
                     p.id_producto, 
                     p.nombre, 
-                    p.modelo, 
+                    p.modelo,
+                    p.sku,
+                    p.imagen_url,
+                    p.ficha_tecnica_url,
                     m.nombre AS marca, 
-                    t.nombre AS tipo
+                    t.nombre AS tipo,
+                    c.nombre AS clasificacion,
+                    pa.nombre AS pais,
+                    GROUP_CONCAT(cert.nombre SEPARATOR ', ') AS certificaciones
                 FROM productos p
                 LEFT JOIN marcas m ON p.id_marca = m.id_marca
                 LEFT JOIN tipos_producto t ON p.id_tipo = t.id_tipo
+                LEFT JOIN clasificaciones c ON p.id_clasificacion = c.id_clasificacion
+                LEFT JOIN paises pa ON p.id_pais_origen = pa.id_pais
+                LEFT JOIN producto_certificaciones pc ON p.id_producto = pc.id_producto
+                LEFT JOIN certificaciones cert ON pc.id_certificacion = cert.id_certificacion
+                GROUP BY p.id_producto
                 ORDER BY m.nombre ASC, p.nombre ASC
             """
             cursor.execute(sql)
