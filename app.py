@@ -168,20 +168,20 @@ with tab2:
             producto_seleccionado = st.selectbox("1. Selecciona el Producto a editar:", list(opciones_productos.keys()))
             id_prod = opciones_productos[producto_seleccionado]
             datos_prod = next(p for p in productos_filtrados if p['id_producto'] == id_prod)
+            
             st.markdown("### 📦 Ficha Comercial del Equipo")
             # Dividimos en 2 columnas: 1/3 para imagen, 2/3 para datos
             col_img, col_datos = st.columns([1, 2])
             
             with col_img:
-                # Si hay URL de imagen, la mostramos, si no, un mensaje
                 if datos_prod.get('imagen_url'):
-                    st.image(datos_prod['imagen_url'], use_container_width=True)
+                    st.image(datos_prod['imagen_url'], width='stretch')
                 else:
                     st.info("📷 Sin imagen disponible")
                     
                 # Botón directo al PDF si existe
                 if datos_prod.get('ficha_tecnica_url'):
-                    st.link_button("📄 Ver Ficha Técnica Original", datos_prod['ficha_tecnica_url'], use_container_width=True)
+                    st.link_button("📄 Ver Ficha Técnica Original", datos_prod['ficha_tecnica_url'], width='stretch')
 
             with col_datos:
                 # Fila 1 de tarjetas
@@ -201,26 +201,28 @@ with tab2:
                 
             st.divider()
 
-
-            
-            # Obtenemos el JSON actual de la base de datos
+            # --- MANEJO DE MEMORIA DE STREAMLIT (EL FIX SUPREMO) ---
             json_actual = obtener_json_producto(id_prod)
+            texto_inicial = json_actual if json_actual else "{}"
             
-            # Obtenemos el JSON actual
-            json_actual = obtener_json_producto(id_prod)
+            # Definimos la llave única que tendrá el cuadro de texto para este producto
+            area_key = f"area_{id_prod}"
             
-            # --- MANEJO DE MEMORIA DE STREAMLIT (SESSION STATE) ---
-            # Si cambiamos de producto, o si es la primera vez que entramos, cargamos el JSON de la BD a la memoria
+            # Si cambiamos de producto, inyectamos el JSON de la BD directo al cuadro de texto
             if "id_producto_actual" not in st.session_state or st.session_state.id_producto_actual != id_prod:
                 st.session_state.id_producto_actual = id_prod
-                st.session_state.json_editor = json_actual
+                st.session_state.json_editor = texto_inicial
+                # Inyección directa a la llave del widget
+                st.session_state[area_key] = texto_inicial
 
             # --- EL MOTOR DE PLANTILLAS ---
             st.write("¿El JSON está vacío? Carga una estructura base rica en especificaciones:")
             col1, col2, col3, col4 = st.columns(4)
             
-            if col1.button("💡 Plantilla Lámparas (LAMPA)"):
-                plantilla = {
+            plantilla_a_cargar = None
+            
+            if col1.button("💡 Plantilla Lámparas (LAMPA)", width='stretch'):
+                plantilla_a_cargar = {
                     "tag_licitacion": "LAMPA",
                     "tipo_lampara": "Examinación / Quirúrgica / Fototerapia",
                     "tecnologia_iluminacion": "LED",
@@ -241,11 +243,9 @@ with tab2:
                     "contador_de_horas_integrado": True,
                     "compatibilidad_radiometro_misma_marca": False
                 }
-                st.session_state.json_editor = json.dumps(plantilla, indent=4, ensure_ascii=False)
-                st.rerun()
                 
-            if col2.button("🛏️ Plantilla Mesa Quirúrgica (MESAS)"):
-                plantilla = {
+            if col2.button("🛏️ Plantilla Mesas (MESAS)", width='stretch'):
+                plantilla_a_cargar = {
                     "tag_licitacion": "MESAS",
                     "tipo_equipo": "Mesa Quirúrgica Electrohidráulica",
                     "control_por_microprocesador": True,
@@ -275,11 +275,9 @@ with tab2:
                     "accesorios_incluidos_cirugia_general": [],
                     "accesorios_incluidos_ortopedia": []
                 }
-                st.session_state.json_editor = json.dumps(plantilla, indent=4, ensure_ascii=False)
-                st.rerun()
                 
-            if col3.button("❄️ Plantilla Refri (REFRI)"):
-                plantilla = {
+            if col3.button("❄️ Plantilla Refri (REFRI)", width='stretch'):
+                plantilla_a_cargar = {
                     "tag_licitacion": "REFRI",
                     "tipo_equipo": "Refrigerador Mortuorio",
                     "capacidad_cadaveres": 0,
@@ -292,11 +290,9 @@ with tab2:
                     "compresor_especificaciones": "",
                     "sistema_alarmas_audibles_visuales": True
                 }
-                st.session_state.json_editor = json.dumps(plantilla, indent=4, ensure_ascii=False)
-                st.rerun()
                 
-            if col4.button("🛒 Plantilla Carro (CARRO)"):
-                plantilla = {
+            if col4.button("🛒 Plantilla Carro (CARRO)", width='stretch'):
+                plantilla_a_cargar = {
                     "tag_licitacion": "CARRO",
                     "tipo_equipo": "Carro Camilla",
                     "capacidad_carga_kg": 0,
@@ -308,42 +304,61 @@ with tab2:
                     "frenos_cantidad": 2,
                     "maneral_conduccion": True
                 }
-                st.session_state.json_editor = json.dumps(plantilla, indent=4, ensure_ascii=False)
+
+            # Si se oprimió un botón de plantilla, inyectamos en el widget y reiniciamos
+            if plantilla_a_cargar:
+                import json
+                texto_plantilla = json.dumps(plantilla_a_cargar, indent=4, ensure_ascii=False)
+                st.session_state.json_editor = texto_plantilla
+                # Inyección directa a la llave del text_area
+                st.session_state[area_key] = texto_plantilla
                 st.rerun()
 
-           # --- AUTOCOMPLETADO CON IA ---
+            # --- AUTOCOMPLETADO CON IA ---
             st.divider()
             st.markdown("### 🤖 Autocompletado Inteligente")
             
-            pdf_catalogo = st.file_uploader("Sube el PDF del equipo (Ej. Catálogo_DARSS.pdf)", type=['pdf'])
+            pdf_catalogo = st.file_uploader("Sube el PDF del equipo (Ej. Catálogo_DARSS.pdf)", type=['pdf'], key=f"up_{id_prod}")
             
-            if pdf_catalogo and st.button("✨ Autocompletar con IA"):
+            if pdf_catalogo and st.button("✨ Autocompletar con IA", key=f"btn_ia_{id_prod}", width='stretch'):
                 with st.spinner("Convirtiendo PDF a Markdown y extrayendo con Qwen..."):
-                    
-                    # Llamamos a nuestra herramienta actualizada
+                    from src.pdf_parser import extraer_texto_pdf
                     texto_pdf_markdown = extraer_texto_pdf(pdf_catalogo)
                     
-                    from src.llm_engine import autocompletar_json_con_ia
-                    nuevo_json = autocompletar_json_con_ia(texto_pdf_markdown, st.session_state.json_editor, modelo="qwen2.5:14b")
+                    # --- NUEVO: RAYOS X PARA DEPURAR EL PARSER ---
+                    with st.expander("👀 Ver texto extraído por el PDF Parser (Debug)"):
+                        if texto_pdf_markdown:
+                            st.text(texto_pdf_markdown[:4000]) # Mostramos los primeros 4000 caracteres
+                        else:
+                            st.error("El texto extraído es NULO.")
                     
-                    if nuevo_json:
-                        st.session_state.json_editor = nuevo_json 
-                        st.rerun()
+                    # Verificamos si realmente extrajo algo útil
+                    if not texto_pdf_markdown or len(texto_pdf_markdown.strip()) < 50:
+                        st.error("🚨 Error: El lector PDF no pudo extraer el texto. ¿Es un PDF escaneado como imagen?")
+                    else:
+                        from src.llm_engine import autocompletar_json_con_ia
+                        json_base_para_ia = st.session_state.get(area_key, "{}")
+                        nuevo_json = autocompletar_json_con_ia(texto_pdf_markdown, json_base_para_ia, modelo="qwen2.5:14b")
+                        
+                        if nuevo_json:
+                            st.session_state.json_editor = nuevo_json 
+                            st.session_state[area_key] = nuevo_json
+                            st.rerun()
 
-            # --- ÁREA DE EDICIÓN Y GUARDADO ---
+           # --- ÁREA DE EDICIÓN Y GUARDADO ---
             st.divider()
-            st.write("2. Edita las especificaciones técnicas:")
+            st.write("2. Edita y guarda los datos técnicos:")
             
-            # El cuadro de texto está amarrado a la memoria temporal (session_state)
-            json_editado = st.text_area("Formato JSON:", value=st.session_state.json_editor, height=350)
+            # El text_area ahora se alimenta EXCLUSIVAMENTE de su propia llave dinámica (area_key)
+            json_editado = st.text_area("Formato JSON:", height=400, key=area_key)
             
-            if st.button("💾 Guardar Especificaciones en Base de Datos", type="primary"):
+            if st.button("💾 Guardar en Base de Datos", type="primary", key=f"save_{id_prod}", width='stretch'):
+                from src.db_client import guardar_json_producto
                 exito, mensaje = guardar_json_producto(id_prod, json_editado)
+                
                 if exito:
                     st.success(mensaje)
-                    # Actualizamos la memoria para que no haya desajustes
+                    # Solo actualizamos el respaldo (json_editor), NO tocamos el area_key porque ya se actualizó sola al teclear
                     st.session_state.json_editor = json_editado
                 else:
                     st.error(mensaje)
-
-
