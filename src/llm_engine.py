@@ -71,9 +71,10 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
     4. ESTRUCTURA ESTRICTA: ESTÁ ESTRICTAMENTE PROHIBIDO INVENTAR LLAVES NUEVAS. Utiliza ÚNICAMENTE las llaves exactas que vienen en la <PLANTILLA_BASE>. Si no hay datos, usa null o 0, pero respeta la estructura original.
     
     <MATRIZ_DE_REFERENCIAS>
-    - Siempre al final de tu respuesta, agrega una llave obligatoria llamada "referencias_paginas".
+    - Agrega una llave obligatoria llamada "referencias_paginas" DENTRO del objeto JSON principal, ANTES de la llave de cierre final '}'.
     - ¡REGLA DE SINTAXIS ESTRICTA!: "referencias_paginas" DEBE ser un objeto JSON anidado que mapee CADA UNA de las variables, NO un string y NO puede estar vacío.
-    - Ejemplo del formato EXACTO que debes usar:
+    - OBLIGATORIO poner una coma "," antes de abrir "referencias_paginas".
+    - Ejemplo del formato EXACTO que debes usar dentro de la plantilla:
       "referencias_paginas": {{
           "potencia_maxima_watts": "Página 1",
           "intensidad_luminosa_luxes": "Página 2",
@@ -83,7 +84,7 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
     </MATRIZ_DE_REFERENCIAS>
     """
 
-    # 3. REGLAS ESPECÍFICAS (EL CEREBRO DE CADA EQUIPO)
+    # 3. REGLAS ESPECÍFICAS
     reglas_especificas = ""
     
     if tag_equipo == "MESAS":
@@ -138,6 +139,27 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
         </REGLAS_ESPECIALIZADAS_PARA_REFRIGERADORES>
         """
 
+    elif tag_equipo == "CARRO":
+        reglas_especificas = """
+        <REGLAS_ESPECIALIZADAS_PARA_CARROS_Y_CAMILLAS>
+        CASO A: Sinónimos de Contención de Líquidos
+        - Si el texto dice "inclinación central para contener eventuales alpechines", "bandeja embutida", o "borde perimetral".
+          Tu deducción DEBE ser: "borde_perimetral_antiderrames": true.
+          
+        CASO B: Sinónimos de Manejo
+        - Si el texto dice "asas", "agarraderas" o "manijas".
+          Tu deducción DEBE ser: "maneral_conduccion": true.
+
+        CASO C: Asignación de Dimensiones y Formato Europeo
+        - ¡REGLA DE FORMATO!: En catálogos europeos, el punto suele indicar miles (ej. "2.080" significa 2080). Ignora el punto y lee el número completo antes de convertir a centímetros.
+        - Ejemplo: Si dice "Anchura mm. 2.080" o "Altura maxima mm. 1.130", conviértelo a 208 cm y 113 cm.
+        - Aplica lógica espacial estricta: No importa cómo le llame el catálogo (anchura, profundidad, longitud). El valor MÁS GRANDE de los tres es siempre el "largo" (ej. 208 cm), el MEDIANO es el "ancho" (ej. 60 cm), y el restante corresponde a la "altura" (ej. min 55, max 113).
+
+        CASO D: Prohibición de Inventar (Valores por Defecto)
+        - Si el texto NO menciona ruedas, frenos o bordes antiderrames, OBLIGATORIAMENTE debes cambiar los valores de la plantilla a null. No dejes "4 ruedas" si el catálogo no lo dice explícitamente.
+        </REGLAS_ESPECIALIZADAS_PARA_CARROS_Y_CAMILLAS>
+        """
+
     else:
         reglas_especificas = "<REGLAS_GENERALES>Extrae la información lo más apegado al texto posible.</REGLAS_GENERALES>"
 
@@ -174,20 +196,20 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
         if match:
             texto_json_limpio = match.group(0)
             
-            # --- ESCUDO ANTI-ERRORES DE SINTAXIS (LA COMA SALVAVIDAS) ---
+            # --- ESCUDO 1: Si olvidó la coma antes de abrir referencias ---
             texto_json_limpio = re.sub(r'(\]|\}|"|true|false|null)\s*"referencias_paginas"', r'\1,\n    "referencias_paginas"', texto_json_limpio)
+            # --- ESCUDO 2: Si cerró el JSON principal antes de tiempo ---
+            texto_json_limpio = re.sub(r'\}\s*,\s*"referencias_paginas"', r',\n    "referencias_paginas"', texto_json_limpio)
             
             try:
                 json_validado = json.loads(texto_json_limpio)
                 return json.dumps(json_validado, indent=4, ensure_ascii=False)
             except json.JSONDecodeError as e:
-                print(f"❌ La IA no devolvió un JSON válido. Error: {e}")
-                print(f"Texto problemático:\n{texto_json_limpio}")
-                return None
-        return None
+                print(f"❌ Error de sintaxis JSON: {e}")
+                return texto_json_limpio, f"Error de sintaxis en la línea {e.lineno}: {e.msg}"
+        return None, "No se encontró ningún formato JSON en la respuesta de la IA."
     except Exception as e:
-        print(f"❌ Error con Ollama en autocompletar: {e}")
-        return None
+        return None, f"Error de conexión con Ollama: {e}"
     
 def obtener_top_3_equipos(texto_licitacion, diccionario_equipos, modelo="qwen2.5:14b"):
     print(f"Iniciando escaneo rápido de todo el inventario con {modelo}...\n")

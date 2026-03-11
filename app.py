@@ -325,25 +325,37 @@ with tab2:
                     from src.pdf_parser import extraer_texto_pdf
                     texto_pdf_markdown = extraer_texto_pdf(pdf_catalogo)
                     
-                    # --- NUEVO: RAYOS X PARA DEPURAR EL PARSER ---
                     with st.expander("👀 Ver texto extraído por el PDF Parser (Debug)"):
                         if texto_pdf_markdown:
-                            st.text(texto_pdf_markdown[:4000]) # Mostramos los primeros 4000 caracteres
+                            st.text(texto_pdf_markdown[:4000])
                         else:
                             st.error("El texto extraído es NULO.")
                     
-                    # Verificamos si realmente extrajo algo útil
                     if not texto_pdf_markdown or len(texto_pdf_markdown.strip()) < 50:
-                        st.error("🚨 Error: El lector PDF no pudo extraer el texto. ¿Es un PDF escaneado como imagen?")
+                        st.error("🚨 Error: El lector PDF no pudo extraer el texto.")
                     else:
                         from src.llm_engine import autocompletar_json_con_ia
                         json_base_para_ia = st.session_state.get(area_key, "{}")
-                        nuevo_json = autocompletar_json_con_ia(texto_pdf_markdown, json_base_para_ia, modelo="qwen2.5:14b")
                         
-                        if nuevo_json:
+                        # Atrapamos las dos variables
+                        nuevo_json, error_ia = autocompletar_json_con_ia(texto_pdf_markdown, json_base_para_ia, modelo="qwen2.5:14b")
+                        
+                        if error_ia and nuevo_json:
+                            # LA RED DE SEGURIDAD: Te mostramos el texto roto en el editor para que lo salves
+                            st.warning(f"⚠️ **La IA hizo el trabajo, pero cometió un error de sintaxis:** {error_ia}")
+                            st.info("Revisa el texto de abajo, corrige la coma o llave faltante, y guárdalo.")
+                            st.session_state.json_editor = nuevo_json 
+                            st.session_state[area_key] = nuevo_json
+                            # Quitamos el st.rerun() aquí para que te deje ver las alertas amarillas
+                            
+                        elif nuevo_json:
+                            # ÉXITO TOTAL
+                            st.success("✅ Extracción perfecta.")
                             st.session_state.json_editor = nuevo_json 
                             st.session_state[area_key] = nuevo_json
                             st.rerun()
+                        else:
+                            st.error(f"💥 Fallo total en la extracción: {error_ia}")
 
            # --- ÁREA DE EDICIÓN Y GUARDADO ---
             st.divider()
