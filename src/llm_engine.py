@@ -254,3 +254,106 @@ def obtener_top_3_equipos(texto_licitacion, diccionario_equipos, modelo="qwen2.5
     except Exception as e:
         print(f"❌ Error al conectar con Ollama en el ranking: {e}")
         return None
+    
+def evaluar_cumplimiento_ia(texto_imss, json_equipo_str, modelo="qwen2.5:14b"):
+    import json
+    import re
+    
+    prompt = f"""
+    Eres un Perito Biomédico dictaminador evaluando si un equipo médico cumple con los requisitos técnicos de una licitación pública.
+    
+    <REQUISITOS_LICITACION_IMSS>
+    {texto_imss}
+    </REQUISITOS_LICITACION_IMSS>
+    
+    <ESPECIFICACIONES_DEL_EQUIPO_OFERTADO>
+    {json_equipo_str}
+    </ESPECIFICACIONES_DEL_EQUIPO_OFERTADO>
+    
+    INSTRUCCIONES DE EVALUACIÓN:
+    1. Compara cada punto del texto del IMSS contra el JSON del equipo.
+    2. Usa LÓGICA CLÍNICA Y MATEMÁTICA ESTRICTA:
+       - Si el IMSS pide "Mínimo 100,000 luxes" y el equipo tiene 240,000 -> 🟢 CUMPLE.
+       - Si el IMSS pide "Microprocesador" y el equipo dice `false` -> 🔴 NO CUMPLE.
+       - Si el IMSS pide "Filtro UV" y el equipo no lo menciona (null/ausente) -> 🟡 SIN INFORMACIÓN.
+    3. Calcula un "score" de cumplimiento del 0 al 100 basado en cuántos puntos cumple.
+
+    FORMATO DE RESPUESTA OBLIGATORIO (Devuelve SOLO JSON válido):
+    {{
+        "score_cumplimiento": 100,
+        "veredicto_general": "CUMPLE TOTALMENTE",
+        "puntos_evaluados": [
+            {{
+                "requisito_imss": "Intensidad luminosa mínima de 100,000 luxes",
+                "especificacion_equipo": "240,000 luxes",
+                "semaforo": "🟢",
+                "justificacion": "Supera el requerimiento mínimo."
+            }}
+        ]
+    }}
+    """
+    
+    try:
+        import ollama
+        respuesta = ollama.chat(model=modelo, messages=[
+            {'role': 'system', 'content': 'Eres un evaluador técnico estricto. Responde SOLO con JSON válido.'},
+            {'role': 'user', 'content': prompt}
+        ])
+        
+        texto_ia = respuesta['message']['content']
+        match = re.search(r'\{.*\}', texto_ia, re.DOTALL)
+        
+        if match:
+            try:
+                json_validado = json.loads(match.group(0))
+                return json_validado
+            except json.JSONDecodeError as e:
+                print(f"❌ Error en JSON del evaluador: {e}")
+                return None
+        return None
+    except Exception as e:
+        print(f"❌ Error conectando con Ollama en evaluador: {e}")
+        return None
+    
+def escaner_rapido_score(texto_requisitos, json_equipo_str, modelo="qwen2.5:14b"):
+    import json
+    import re
+    
+    prompt = f"""
+    Eres un algoritmo matemático de filtrado técnico. Tu único objetivo es calcular el porcentaje de compatibilidad entre los requisitos de una licitación y las especificaciones de un equipo.
+    
+    REQUISITOS DE LA LICITACIÓN:
+    {texto_requisitos}
+    
+    ESPECIFICACIONES DEL EQUIPO:
+    {json_equipo_str}
+    
+    REGLAS DE LA FÓRMULA:
+    1. Extrae mentalmente los puntos clave del requisito (ej. capacidad, material, dimensiones).
+    2. Cruza cada punto contra el equipo. Usa lógica matemática estricta (si piden 200kg y tiene 220kg, sí cumple).
+    3. Calcula un "score_compatibilidad" de 0 a 100. (100 = cumple todo o lo supera, 50 = le faltan la mitad de cosas, 0 = es un equipo totalmente distinto).
+    
+    RESPONDE ÚNICA Y ESTRICTAMENTE CON ESTE FORMATO JSON:
+    {{
+        "score_compatibilidad": 85,
+        "motivo_principal": "Cumple en capacidad y material, pero difiere ligeramente en dimensiones.",
+        "alertas_rojas": ["No cuenta con batería de respaldo", "Voltaje incompatible"]
+    }}
+    """
+    
+    try:
+        import ollama
+        respuesta = ollama.chat(model=modelo, messages=[
+            {'role': 'system', 'content': 'Solo devuelves JSON válido sin texto extra.'},
+            {'role': 'user', 'content': prompt}
+        ])
+        
+        texto_ia = respuesta['message']['content']
+        match = re.search(r'\{.*\}', texto_ia, re.DOTALL)
+        
+        if match:
+            return json.loads(match.group(0))
+        return None
+    except Exception as e:
+        print(f"❌ Error en escáner rápido: {e}")
+        return None

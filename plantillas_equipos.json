@@ -1,0 +1,32 @@
+{
+    "LAMPA": {
+        "nombre_boton": "💡 Plantilla Lámparas",
+        "reglas_especificas": "<REGLAS_ESPECIALIZADAS_PARA_LAMPARAS>\nCASO A: Grandes Números...\n- Si el texto dice '160,000 Lux', pon: 'intensidad_luminosa_luxes': 160000.\nCASO D: Quirúrgica vs Fototerapia...\n- ¡REGLA DE ORO!: Pon en 0 o null todo lo de fototerapia si es quirúrgica.\n</REGLAS_ESPECIALIZADAS_PARA_LAMPARAS>",
+        "esquema": {
+            "tag_licitacion": "LAMPA",
+            "tipo_lampara": "Examinación / Quirúrgica / Fototerapia",
+            "tecnologia_iluminacion": "LED",
+            "intensidad_luminosa_luxes": 0,
+            "control_intensidad_iluminacion": true
+        }
+    },
+    "MESAS": {
+        "nombre_boton": "🛏️ Plantilla Mesas Quirúrgicas",
+        "reglas_especificas": "<REGLAS_ESPECIALIZADAS_PARA_MESAS>\nCASO A: Conversión...\n- Si dice 'Height 680 mm - 1120 mm'. Convierte a cm: 'rango_elevacion_descenso_cm': {\"min\": 68, \"max\": 112}.\nCASO C: Mecánico vs Eléctrico...\n- Si dice 'bomba de pie', 'control_por_microprocesador' es false.\n</REGLAS_ESPECIALIZADAS_PARA_MESAS>",
+        "esquema": {
+            "tag_licitacion": "MESAS",
+            "tipo_equipo": "Mesa Quirúrgica Electrohidráulica",
+            "control_por_microprocesador": true,
+            "rango_elevacion_descenso_cm": {"min": 0, "max": 0}
+        }
+    },
+    "CARRO": {
+        "nombre_boton": "🛒 Plantilla Carro Camilla",
+        "reglas_especificas": "<REGLAS_ESPECIALIZADAS_PARA_CARROS>\nCASO A: Sinónimos...\n- 'bandeja embutida' = 'borde_perimetral_antiderrames': true.\n</REGLAS_ESPECIALIZADAS_PARA_CARROS>",
+        "esquema": {
+            "tag_licitacion": "CARRO",
+            "tipo_equipo": "Carro Camilla",
+            "borde_perimetral_antiderrames": true
+        }
+    }
+}
