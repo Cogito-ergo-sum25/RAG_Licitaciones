@@ -1,12 +1,10 @@
 import streamlit as st
 import json
+import os
 from src.pdf_parser import extraer_texto_pdf
 from src.llm_engine import autocompletar_json_con_ia
 from src.db_client import obtener_todos_los_productos, obtener_json_producto, guardar_json_producto
 
-# ==========================================
-# PESTAÑA 2: EL CRUD DE TUS PRODUCTOS
-# ==========================================
 def render_tab2():
     st.header("Gestor de Especificaciones Técnicas")
     st.markdown("Alimenta tu base de datos con las especificaciones. Usa las plantillas para no olvidar ningún campo importante.")
@@ -18,29 +16,49 @@ def render_tab2():
     else:
         # --- SISTEMA DE FILTROS ---
         st.markdown("#### 🔍 Filtros de Búsqueda")
-        col_f1, col_f2 = st.columns(2)
         
-        lista_marcas = ["Todas"] + sorted(list(set(str(p['marca']) for p in productos if p['marca'])))
-        lista_tipos = ["Todos"] + sorted(list(set(str(p['tipo']) for p in productos if p['tipo'])))
+        # Ahora usamos 3 columnas para incluir la Clasificación
+        col_f1, col_f2, col_f3 = st.columns(3)
+        
+        # Obtenemos las listas únicas, protegiendo con .get() por si algún dato es nulo
+        lista_marcas = ["Todas"] + sorted(list(set(str(p.get('marca', '')) for p in productos if p.get('marca'))))
+        lista_tipos = ["Todos"] + sorted(list(set(str(p.get('tipo', '')) for p in productos if p.get('tipo'))))
+        lista_clasificaciones = ["Todas"] + sorted(list(set(str(p.get('clasificacion', '')) for p in productos if p.get('clasificacion'))))
         
         with col_f1:
             filtro_marca = st.selectbox("Filtrar por Marca:", lista_marcas)
         with col_f2:
             filtro_tipo = st.selectbox("Filtrar por Tipo:", lista_tipos)
+        with col_f3:
+            filtro_clasificacion = st.selectbox("Filtrar por Clasificación:", lista_clasificaciones)
             
+        # Aplicamos los filtros en cascada
         productos_filtrados = productos
         if filtro_marca != "Todas":
-            productos_filtrados = [p for p in productos_filtrados if p['marca'] == filtro_marca]
+            productos_filtrados = [p for p in productos_filtrados if p.get('marca') == filtro_marca]
         if filtro_tipo != "Todos":
-            productos_filtrados = [p for p in productos_filtrados if p['tipo'] == filtro_tipo]
+            productos_filtrados = [p for p in productos_filtrados if p.get('tipo') == filtro_tipo]
+        if filtro_clasificacion != "Todas":
+            productos_filtrados = [p for p in productos_filtrados if p.get('clasificacion') == filtro_clasificacion]
             
         st.divider()
         
         if not productos_filtrados:
             st.info("No hay productos que coincidan con estos filtros.")
         else:
-            # --- SELECCIÓN DE PRODUCTO ---
-            opciones_productos = {f"[{p['marca']}] {p['nombre']} - {p['modelo']} (ID: {p['id_producto']})": p['id_producto'] for p in productos_filtrados}
+            # --- SELECCIÓN DE PRODUCTO (NUEVO FORMATO) ---
+            # Usamos nombre_corto (si no existe, usamos el nombre normal como respaldo)
+            opciones_productos = {}
+            for p in productos_filtrados:
+                marca = p.get('marca', 'S/M')
+                # Priorizamos nombre_corto, si está vacío usamos nombre
+                nombre_mostrar = p.get('nombre_corto') if p.get('nombre_corto') else p.get('nombre', 'Sin Nombre')
+                sku = p.get('sku', 'Sin SKU')
+                id_prod = p.get('id_producto')
+                
+                etiqueta = f"[{marca}] {nombre_mostrar} - {sku} (ID: {id_prod})"
+                opciones_productos[etiqueta] = id_prod
+                
             producto_seleccionado = st.selectbox("1. Selecciona el Producto a editar:", list(opciones_productos.keys()))
             id_prod = opciones_productos[producto_seleccionado]
             datos_prod = next(p for p in productos_filtrados if p['id_producto'] == id_prod)
@@ -57,22 +75,26 @@ def render_tab2():
                     
                 # Botón directo al PDF si existe
                 if datos_prod.get('ficha_tecnica_url'):
-                    st.link_button("📄 Ver Ficha Técnica Original", datos_prod['ficha_tecnica_url'], width='stretch')
+                    st.link_button("📄 Ver Ficha Técnica Original", datos_prod['ficha_tecnica_url'], use_container_width=True)
 
             with col_datos:
-                # Fila 1 de tarjetas
-                c1, c2, c3 = st.columns(3)
-                c1.metric("📌 Marca", datos_prod.get('marca') or 'N/A')
-                c2.metric("🏷️ Modelo", datos_prod.get('modelo') or 'N/A')
-                c3.metric("📦 SKU", datos_prod.get('sku') or 'N/A')
+                st.markdown("##### Información General")
                 
-                # Fila 2 de tarjetas
-                c4, c5, c6 = st.columns(3)
-                c4.metric("⚙️ Tipo Producto", datos_prod.get('tipo') or 'N/A')
-                c5.metric("📑 Clasificación", datos_prod.get('clasificacion') or 'N/A')
-                c6.metric("🌎 País de Origen", datos_prod.get('pais') or 'N/A')
+                # Cambiamos a 2 columnas con texto limpio (Markdown) en lugar de metrics
+                c1, c2 = st.columns(2)
                 
-                # Certificaciones al final porque pueden ser muchas
+                with c1:
+                    st.markdown(f"**📌 Marca:** {datos_prod.get('marca') or 'N/A'}")
+                    st.markdown(f"**🏷️ Modelo:** {datos_prod.get('modelo') or 'N/A'}")
+                    st.markdown(f"**📦 SKU:** {datos_prod.get('sku') or 'N/A'}")
+                
+                with c2:
+                    st.markdown(f"**⚙️ Tipo:** {datos_prod.get('tipo') or 'N/A'}")
+                    st.markdown(f"**📑 Clase:** {datos_prod.get('clasificacion') or 'N/A'}")
+                    st.markdown(f"**🌎 Origen:** {datos_prod.get('pais') or 'N/A'}")
+                
+                st.markdown("---")
+                # Certificaciones a todo lo ancho
                 st.markdown(f"**🏅 Certificaciones:** {datos_prod.get('certificaciones') or 'Ninguna registrada'}")
                 
             st.divider()
@@ -91,104 +113,35 @@ def render_tab2():
                 # Inyección directa a la llave del widget
                 st.session_state[area_key] = texto_inicial
 
-            # --- EL MOTOR DE PLANTILLAS ---
+            # ==================================================
+            # --- EL MOTOR DE PLANTILLAS DINÁMICO (LA MAGIA) ---
+            # ==================================================
             st.write("¿El JSON está vacío? Carga una estructura base rica en especificaciones:")
-            col1, col2, col3, col4 = st.columns(4)
             
-            plantilla_a_cargar = None
-            
-            if col1.button("💡 Plantilla Lámparas (LAMPA)", width='stretch'):
-                plantilla_a_cargar = {
-                    "tag_licitacion": "LAMPA",
-                    "tipo_lampara": "Examinación / Quirúrgica / Fototerapia",
-                    "tecnologia_iluminacion": "LED",
-                    "cantidad_minima_leds": 0,
-                    "potencia_maxima_watts": 0,
-                    "intensidad_luminosa_luxes": 0,
-                    "temperatura_color_kelvin": 0,
-                    "vida_util_horas": 0,
-                    "control_intensidad_iluminacion": True,
-                    "longitud_brazo_flexible_cm": 0,
-                    "diametro_campo_iluminacion_cm": {"min": 0, "max": 0},
-                    "mango_posicionamiento_una_mano": True,
-                    "fototerapia_longitud_onda_nm": {"min": 0, "max": 0},
-                    "fototerapia_irradiacion_microwatts_cm2_nm": 0,
-                    "fototerapia_superficie_efectiva_cm": {"min": 0, "max": 0},
-                    "ajuste_altura_e_inclinacion": True,
-                    "pedestal_rodable_con_frenos": True,
-                    "contador_de_horas_integrado": True,
-                    "compatibilidad_radiometro_misma_marca": False
-                }
+            ruta_plantillas = "plantillas_equipos.json"
+            if os.path.exists(ruta_plantillas):
+                with open(ruta_plantillas, "r", encoding="utf-8") as f:
+                    catalogo_plantillas = json.load(f)
                 
-            if col2.button("🛏️ Plantilla Mesas (MESAS)", width='stretch'):
-                plantilla_a_cargar = {
-                    "tag_licitacion": "MESAS",
-                    "tipo_equipo": "Mesa Quirúrgica Electrohidráulica",
-                    "control_por_microprocesador": True,
-                    "capacidad_carga_kg": 0,
-                    "sistema_frenos_pivotes_anclaje": True,
-                    "longitud_total_cm": 0,
-                    "material_estructura_y_cubiertas": "Acero inoxidable o acero al cromo níquel",
-                    "superficie_radiotransparente": True,
-                    "cantidad_secciones": 5,
-                    "posicion_nefrectomia_elevador_rinon": False,
-                    "piernas_desmontables_abatibles_grados": 0,
-                    "movimiento_tijera_piernas": False,
-                    "cabecera_ajuste_flexion_grados": 0,
-                    "rango_elevacion_descenso_cm": {"min": 0, "max": 0},
-                    "grados_fowler_semifowler": {"min": 0, "max": 0},
-                    "posicion_kraske_navaja_sevillana": True,
-                    "grados_trendelenburg": 0,
-                    "grados_trendelenburg_inverso": 0,
-                    "grados_inclinacion_lateral": 0,
-                    "tablero_giratorio": False,
-                    "acceso_arco_en_c_desplazamiento_longitudinal_cm": 0,
-                    "sistema_emergencia_panel_columna": True,
-                    "sistema_emergencia_bombeo_hidraulico_manual": True,
-                    "retorno_automatico_horizontal": True,
-                    "bateria_respaldo_indicador_carga": True,
-                    "cojines_conductivos_antiestaticos_sin_costuras": True,
-                    "accesorios_incluidos_cirugia_general": [],
-                    "accesorios_incluidos_ortopedia": []
-                }
+                col_sel, col_btn = st.columns([3, 1])
                 
-            if col3.button("❄️ Plantilla Refri (REFRI)", width='stretch'):
-                plantilla_a_cargar = {
-                    "tag_licitacion": "REFRI",
-                    "tipo_equipo": "Refrigerador Mortuorio",
-                    "capacidad_cadaveres": 0,
-                    "gavetas_acceso_lateral": False,
-                    "material_interior": "Acero Inoxidable AISI-304",
-                    "material_exterior": "Acero Inoxidable AISI-304",
-                    "rango_temperatura_celsius": {"min": 0, "max": 0},
-                    "capacidad_carga_por_bandeja_kg": 0,
-                    "tipo_gas_refrigerante": "",
-                    "compresor_especificaciones": "",
-                    "sistema_alarmas_audibles_visuales": True
-                }
+                with col_sel:
+                    # Extraemos los nombres de los botones para el Selectbox
+                    opciones_mostrar = {datos.get("nombre_boton", f"Plantilla {tag}"): tag for tag, datos in catalogo_plantillas.items()}
+                    seleccion_plantilla = st.selectbox("Selecciona la categoría del equipo:", list(opciones_mostrar.keys()), label_visibility="collapsed")
                 
-            if col4.button("🛒 Plantilla Carro (CARRO)", width='stretch'):
-                plantilla_a_cargar = {
-                    "tag_licitacion": "CARRO",
-                    "tipo_equipo": "Carro Camilla",
-                    "capacidad_carga_kg": 0,
-                    "dimensiones_cm": {"largo": {"min": 0, "max": 0}, "ancho": {"min": 0, "max": 0}, "altura": {"min": 0, "max": 0}},
-                    "material_fabricacion": "Acero Inoxidable AISI-304",
-                    "borde_perimetral_antiderrames": True,
-                    "ruedas_cantidad": 4,
-                    "diametro_ruedas_cm": 0,
-                    "frenos_cantidad": 2,
-                    "maneral_conduccion": True
-                }
+                with col_btn:
+                    if st.button("📥 Cargar Plantilla", use_container_width=True, type="secondary"):
+                        tag_elegido = opciones_mostrar[seleccion_plantilla]
+                        plantilla_a_cargar = catalogo_plantillas[tag_elegido]["esquema"]
+                        
+                        texto_plantilla = json.dumps(plantilla_a_cargar, indent=4, ensure_ascii=False)
+                        st.session_state.json_editor = texto_plantilla
+                        st.session_state[area_key] = texto_plantilla
+                        st.rerun()
+            else:
+                st.warning("⚠️ No se encontró el archivo 'plantillas_equipos.json'. Ve a la Pestaña 3 para crear plantillas.")
 
-            # Si se oprimió un botón de plantilla, inyectamos en el widget y reiniciamos
-            if plantilla_a_cargar:
-                import json
-                texto_plantilla = json.dumps(plantilla_a_cargar, indent=4, ensure_ascii=False)
-                st.session_state.json_editor = texto_plantilla
-                # Inyección directa a la llave del text_area
-                st.session_state[area_key] = texto_plantilla
-                st.rerun()
 
             # --- AUTOCOMPLETADO CON IA ---
             st.divider()
@@ -196,9 +149,8 @@ def render_tab2():
             
             pdf_catalogo = st.file_uploader("Sube el PDF del equipo (Ej. Catálogo_DARSS.pdf)", type=['pdf'], key=f"up_{id_prod}")
             
-            if pdf_catalogo and st.button("✨ Autocompletar con IA", key=f"btn_ia_{id_prod}", width='stretch'):
+            if pdf_catalogo and st.button("✨ Autocompletar con IA", key=f"btn_ia_{id_prod}", use_container_width=True):
                 with st.spinner("Convirtiendo PDF a Markdown y extrayendo con Qwen..."):
-                    from src.pdf_parser import extraer_texto_pdf
                     texto_pdf_markdown = extraer_texto_pdf(pdf_catalogo)
                     
                     with st.expander("👀 Ver texto extraído por el PDF Parser (Debug)"):
@@ -210,10 +162,9 @@ def render_tab2():
                     if not texto_pdf_markdown or len(texto_pdf_markdown.strip()) < 50:
                         st.error("🚨 Error: El lector PDF no pudo extraer el texto.")
                     else:
-                        from src.llm_engine import autocompletar_json_con_ia
                         json_base_para_ia = st.session_state.get(area_key, "{}")
                         
-                        # Atrapamos las dos variables
+                        # Atrapamos las dos variables de tu nueva función
                         nuevo_json, error_ia = autocompletar_json_con_ia(texto_pdf_markdown, json_base_para_ia, modelo="qwen2.5:14b")
                         
                         if error_ia and nuevo_json:
@@ -240,8 +191,7 @@ def render_tab2():
             # El text_area ahora se alimenta EXCLUSIVAMENTE de su propia llave dinámica (area_key)
             json_editado = st.text_area("Formato JSON:", height=400, key=area_key)
             
-            if st.button("💾 Guardar en Base de Datos", type="primary", key=f"save_{id_prod}", width='stretch'):
-                from src.db_client import guardar_json_producto
+            if st.button("💾 Guardar en Base de Datos", type="primary", key=f"save_{id_prod}", use_container_width=True):
                 exito, mensaje = guardar_json_producto(id_prod, json_editado)
                 
                 if exito:

@@ -1,0 +1,16 @@
+CREATE TABLE producto_especificaciones (
+  id_producto INT AUTO_INCREMENT PRIMARY KEY,
+  especificaciones_tecnicas JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ai_plantillas_extraccion (
+  tag_licitacion VARCHAR(20) PRIMARY KEY,
+  nombre_boton VARCHAR(255) NOT NULL,
+  reglas_especificas TEXT,
+  esquema_base JSON NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+

@@ -52,6 +52,10 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
         return None
 
 def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.5:14b"):
+    import json
+    import re
+    import os
+    
     print(f"Iniciando Extracción Nivel Perito Enrutada con {modelo}...\n")
     
     texto_seguro = texto_catalogo[:40000] 
@@ -62,7 +66,7 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
     except:
         tag_equipo = "OTRO"
 
-    # 2. REGLAS BASE OBLIGATORIAS PARA TODOS LOS EQUIPOS
+    # 1. REGLAS BASE OBLIGATORIAS PARA TODOS LOS EQUIPOS
     reglas_comunes = """
     INSTRUCCIONES DE EXTRACCIÓN (NIVEL PERITO ESTRICTO):
     1. Extrae los valores y llena la <PLANTILLA_BASE>.
@@ -75,95 +79,30 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
     - ¡REGLA DE SINTAXIS ESTRICTA!: "referencias_paginas" DEBE ser un objeto JSON anidado que mapee CADA UNA de las variables, NO un string y NO puede estar vacío.
     - OBLIGATORIO poner una coma "," antes de abrir "referencias_paginas".
     - Ejemplo del formato EXACTO que debes usar dentro de la plantilla:
-      "referencias_paginas": {{
+      "referencias_paginas": {
           "potencia_maxima_watts": "Página 1",
           "intensidad_luminosa_luxes": "Página 2",
           "control_por_microprocesador": "No encontrado"
-      }}
+      }
     - Mapea todas las llaves. Si encontraste el dato, pon la "Página X". Si NO lo encontraste, pon "No encontrado".
     </MATRIZ_DE_REFERENCIAS>
     """
 
-    # 3. REGLAS ESPECÍFICAS
-    reglas_especificas = ""
+    # 2. CARGAMOS LAS REGLAS ESPECÍFICAS DINÁMICAMENTE DESDE EL ARCHIVO JSON
+    reglas_especificas = "<REGLAS_GENERALES>Extrae la información lo más apegado al texto posible.</REGLAS_GENERALES>"
+    ruta_plantillas = "plantillas_equipos.json"
     
-    if tag_equipo == "MESAS":
-        reglas_especificas = """
-        <REGLAS_ESPECIALIZADAS_PARA_MESAS>
-        CASO A: Conversión de Unidades y Rangos Matemáticos
-        - Si el diagrama dice: "Height 680 mm - 1120 mm". Convierte a cm: "rango_elevacion_descenso_cm": {{"min": 68, "max": 112}}.
-        - Si la tabla dice: "Table Height 680mm ± 20mm" y "Height Adjustment Range ≥250mm". SUMA EL RANGO: "rango_elevacion_descenso_cm": {{"min": 68, "max": 93}} (Porque 68 + 25 = 93).
-        - Si el texto dice: "Trendelenburg ≥25°" y "Lateral Tilt 20° ± 2°". Ignora los símbolos matemáticos: "grados_trendelenburg": 25, "grados_inclinacion_lateral": 20.
+    if os.path.exists(ruta_plantillas):
+        with open(ruta_plantillas, "r", encoding="utf-8") as f:
+            catalogo_plantillas = json.load(f)
+            # Si el TAG existe en el archivo, extraemos sus reglas
+            if tag_equipo in catalogo_plantillas:
+                reglas_crud = catalogo_plantillas[tag_equipo].get("reglas_especificas", "").strip()
+                
+                if reglas_crud:
+                    reglas_especificas = f"<REGLAS_ESPECIALIZADAS_PARA_{tag_equipo}>\n{reglas_crud}\n</REGLAS_ESPECIALIZADAS_PARA_{tag_equipo}>"
 
-        CASO B: Anti-Confusión de Medidas
-        - Si el texto dice: "12.2 pulgadas (31 cm) Deslizamiento Longitudinal". Tu deducción es: "acceso_arco_en_c_desplazamiento_longitudinal_cm": 31.
-        - ¡REGLA DE ORO!: NUNCA asignes el valor de "deslizamiento" (slide) a las llaves de "elevación/descenso" (height).
-
-        CASO C: Mecánico vs Eléctrico
-        - Si el texto dice "manual mechanic operating table" o "bomba de pie". Deduce: "control_por_microprocesador": false, "sistema_emergencia_bombeo_hidraulico_manual": true. Y pon todo lo eléctrico (batería, panel) en false.
-        
-        CASO D: Booleanos Especiales
-        - "costura soldada" o "anti-decubitus" significa que "cojines_conductivos_antiestaticos_sin_costuras": true.
-        - "Double-locking levers" significa que "sistema_frenos_pivotes_anclaje": true.
-        </REGLAS_ESPECIALIZADAS_PARA_MESAS>
-        """
-        
-    elif tag_equipo == "LAMPA":
-        reglas_especificas = """
-        <REGLAS_ESPECIALIZADAS_PARA_LAMPARAS>
-        CASO A: Grandes Números (Sintaxis Estricta)
-        - Si el texto dice "160,000 Lux" o "160k Lux". El número DEBE ir sin comas: "intensidad_luminosa_luxes": 160000.
-        - Si el texto dice "50,000 h minimum". El número va sin comas: "vida_util_horas": 50000.
-        
-        CASO B: Tablas de Luxes por Distancia
-        - Si el texto muestra una tabla (ej. 20000 a 30cm, 7000 a 50cm). Escoge SIEMPRE el valor MÁXIMO de intensidad: "intensidad_luminosa_luxes": 20000.
-
-        CASO C: Conversión a Centímetros
-        - Si el texto dice: "Light field diameter (d10): 150 - 300 mm". Convierte estrictamente a CENTÍMETROS: "diametro_campo_iluminacion_cm": {{"min": 15, "max": 30}}.
-        - Si te da varias opciones de brazo "Flexible 65 cm, 100 cm, 123 cm". Selecciona EL MÁS LARGO en un solo número: "longitud_brazo_flexible_cm": 123.
-
-        CASO D: Quirúrgica vs Fototerapia
-        - Si el catálogo es de una lámpara de examinación o quirófano normal (ej. "Surgical Light").
-        - ¡REGLA DE ORO!: Pon en 0 o null todo lo de fototerapia ("fototerapia_longitud_onda_nm": null, "fototerapia_irradiacion...": 0). No inventes datos.
-
-        CASO E: LED vs Halógeno
-        - Si el texto dice "Halogen bulb", la "tecnologia_iluminacion" debe ser "Halógeno" y la "cantidad_minima_leds" debe ser obligatoriamente null o 0.
-        </REGLAS_ESPECIALIZADAS_PARA_LAMPARAS>
-        """
-        
-    elif tag_equipo == "REFRI":
-        reglas_especificas = """
-        <REGLAS_ESPECIALIZADAS_PARA_REFRIGERADORES>
-        1. TEMPERATURAS: Extrae siempre el rango en grados Celsius.
-        2. MATERIALES: Especifica claramente el tipo de acero inoxidable (ej. AISI-304) si se menciona.
-        </REGLAS_ESPECIALIZADAS_PARA_REFRIGERADORES>
-        """
-
-    elif tag_equipo == "CARRO":
-        reglas_especificas = """
-        <REGLAS_ESPECIALIZADAS_PARA_CARROS_Y_CAMILLAS>
-        CASO A: Sinónimos de Contención de Líquidos
-        - Si el texto dice "inclinación central para contener eventuales alpechines", "bandeja embutida", o "borde perimetral".
-          Tu deducción DEBE ser: "borde_perimetral_antiderrames": true.
-          
-        CASO B: Sinónimos de Manejo
-        - Si el texto dice "asas", "agarraderas" o "manijas".
-          Tu deducción DEBE ser: "maneral_conduccion": true.
-
-        CASO C: Asignación de Dimensiones y Formato Europeo
-        - ¡REGLA DE FORMATO!: En catálogos europeos, el punto suele indicar miles (ej. "2.080" significa 2080). Ignora el punto y lee el número completo antes de convertir a centímetros.
-        - Ejemplo: Si dice "Anchura mm. 2.080" o "Altura maxima mm. 1.130", conviértelo a 208 cm y 113 cm.
-        - Aplica lógica espacial estricta: No importa cómo le llame el catálogo (anchura, profundidad, longitud). El valor MÁS GRANDE de los tres es siempre el "largo" (ej. 208 cm), el MEDIANO es el "ancho" (ej. 60 cm), y el restante corresponde a la "altura" (ej. min 55, max 113).
-
-        CASO D: Prohibición de Inventar (Valores por Defecto)
-        - Si el texto NO menciona ruedas, frenos o bordes antiderrames, OBLIGATORIAMENTE debes cambiar los valores de la plantilla a null. No dejes "4 ruedas" si el catálogo no lo dice explícitamente.
-        </REGLAS_ESPECIALIZADAS_PARA_CARROS_Y_CAMILLAS>
-        """
-
-    else:
-        reglas_especificas = "<REGLAS_GENERALES>Extrae la información lo más apegado al texto posible.</REGLAS_GENERALES>"
-
-    # 4. ARMAMOS EL PROMPT FINAL MAESTRO
+    # 3. ARMAMOS EL PROMPT FINAL MAESTRO
     prompt = f"""
     Eres un Perito Biomédico especialista en dictaminar equipos médicos.
     
@@ -203,7 +142,7 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
             
             try:
                 json_validado = json.loads(texto_json_limpio)
-                return json.dumps(json_validado, indent=4, ensure_ascii=False)
+                return json.dumps(json_validado, indent=4, ensure_ascii=False), None
             except json.JSONDecodeError as e:
                 print(f"❌ Error de sintaxis JSON: {e}")
                 return texto_json_limpio, f"Error de sintaxis en la línea {e.lineno}: {e.msg}"

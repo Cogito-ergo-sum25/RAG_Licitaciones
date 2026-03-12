@@ -20,61 +20,60 @@ def render_tab3():
     
     plantillas = cargar_plantillas()
     
-    col_lista, col_editor = st.columns([1, 2])
+    # 1. Selector en la parte superior
+    st.subheader("📌 Seleccionar Categoría")
+    opciones = ["➕ Crear Nueva Categoría"] + list(plantillas.keys())
+    seleccion = st.selectbox("Elige una plantilla para editar o crea una nueva:", opciones)
     
-    with col_lista:
-        st.subheader("Categorías Actuales")
-        # Opción para crear una nueva
-        opciones = ["➕ Crear Nueva Categoría"] + list(plantillas.keys())
-        seleccion = st.selectbox("Selecciona para editar:", opciones)
+    st.divider()
     
-    with col_editor:
-        st.subheader("✏️ Editor de Plantilla")
+    # 2. Editor ocupando todo el ancho
+    st.subheader("✏️ Editor de Plantilla")
+    
+    # Variables de estado inicial
+    tag_actual = ""
+    nombre_boton_actual = ""
+    reglas_actuales = ""
+    esquema_actual_str = "{}"
+    
+    # Si seleccionamos editar una existente, cargamos sus datos
+    if seleccion != "➕ Crear Nueva Categoría":
+        tag_actual = seleccion
+        datos_plantilla = plantillas[seleccion]
+        nombre_boton_actual = datos_plantilla.get("nombre_boton", "")
+        reglas_actuales = datos_plantilla.get("reglas_especificas", "")
+        esquema_actual_str = json.dumps(datos_plantilla.get("esquema", {}), indent=4, ensure_ascii=False)
         
-        # Variables de estado inicial
-        tag_actual = ""
-        nombre_boton_actual = ""
-        reglas_actuales = ""
-        esquema_actual_str = "{}"
+    # Formulario de Edición
+    with st.form("form_plantilla"):
+        nuevo_tag = st.text_input("Tag de la Categoría (ej. LAMPA, REFRI):", value=tag_actual, help="Debe ser corto y en mayúsculas.")
+        nuevo_nombre = st.text_input("Nombre Descriptivo:", value=nombre_boton_actual)
         
-        # Si seleccionamos editar una existente, cargamos sus datos
-        if seleccion != "➕ Crear Nueva Categoría":
-            tag_actual = seleccion
-            datos_plantilla = plantillas[seleccion]
-            nombre_boton_actual = datos_plantilla.get("nombre_boton", "")
-            reglas_actuales = datos_plantilla.get("reglas_especificas", "")
-            esquema_actual_str = json.dumps(datos_plantilla.get("esquema", {}), indent=4, ensure_ascii=False)
-            
-        # Formulario de Edición
-        with st.form("form_plantilla"):
-            nuevo_tag = st.text_input("Tag de la Categoría (ej. LAMPA, REFRI):", value=tag_actual, help="Debe ser corto y en mayúsculas.")
-            nuevo_nombre = st.text_input("Nombre Descriptivo:", value=nombre_boton_actual)
-            
-            st.markdown("**Reglas Específicas para la IA (Prompt):**")
-            nuevas_reglas = st.text_area("Instrucciones trampa, conversiones o deducciones matemáticas:", value=reglas_actuales, height=200)
-            
-            st.markdown("**Esquema JSON Base:**")
-            nuevo_esquema_str = st.text_area("Estructura de llaves (Usa null o 0):", value=esquema_actual_str, height=300)
-            
-            btn_guardar = st.form_submit_button("💾 Guardar Plantilla", type="primary", use_container_width=True)
-            
-            if btn_guardar:
-                if not nuevo_tag.strip():
-                    st.error("El Tag no puede estar vacío.")
-                else:
-                    try:
-                        # Validamos que el esquema sea un JSON correcto antes de guardarlo
-                        esquema_json = json.loads(nuevo_esquema_str)
-                        
-                        # Actualizamos el diccionario
-                        plantillas[nuevo_tag.strip().upper()] = {
-                            "nombre_boton": nuevo_nombre,
-                            "reglas_especificas": nuevas_reglas,
-                            "esquema": esquema_json
-                        }
-                        
-                        guardar_plantillas(plantillas)
-                        st.success(f"¡Plantilla '{nuevo_tag}' guardada con éxito!")
-                        st.rerun() # Recarga para actualizar la lista de la izquierda
-                    except json.JSONDecodeError as e:
-                        st.error(f"❌ Error en el formato del JSON Base: {e}")
+        st.markdown("**Reglas Específicas para la IA (Prompt):**")
+        nuevas_reglas = st.text_area("Instrucciones trampa, conversiones o deducciones matemáticas:", value=reglas_actuales, height=250)
+        
+        st.markdown("**Esquema JSON Base:**")
+        nuevo_esquema_str = st.text_area("Estructura de llaves (Usa null o 0):", value=esquema_actual_str, height=400)
+        
+        btn_guardar = st.form_submit_button("💾 Guardar Plantilla", type="primary", use_container_width=True)
+        
+        if btn_guardar:
+            if not nuevo_tag.strip():
+                st.error("El Tag no puede estar vacío.")
+            else:
+                try:
+                    # Validamos que el esquema sea un JSON correcto antes de guardarlo
+                    esquema_json = json.loads(nuevo_esquema_str)
+                    
+                    # Actualizamos el diccionario
+                    plantillas[nuevo_tag.strip().upper()] = {
+                        "nombre_boton": nuevo_nombre,
+                        "reglas_especificas": nuevas_reglas,
+                        "esquema": esquema_json
+                    }
+                    
+                    guardar_plantillas(plantillas)
+                    st.success(f"¡Plantilla '{nuevo_tag}' guardada con éxito!")
+                    st.rerun() # Recarga para actualizar la lista de arriba
+                except json.JSONDecodeError as e:
+                    st.error(f"❌ Error en el formato del JSON Base: {e}")
