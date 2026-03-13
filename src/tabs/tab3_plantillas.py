@@ -1,10 +1,50 @@
 import streamlit as st
 import json
-from src.db_client import obtener_todas_las_plantillas, guardar_plantilla_bd
+from src.db_client import obtener_todas_las_plantillas, guardar_plantilla_bd, obtener_configuracion_global, guardar_configuracion_global
 
 def render_tab3():
     st.header("⚙️ Gestor de Reglas y Plantillas")
     st.markdown("Administra los esquemas JSON y las reglas de extracción que usa la IA (Guardado directamente en MySQL).")
+
+    # =========================================================
+    # 🌍 SECCIÓN: PROMPTS MAESTROS DE LOS AGENTES (FIJOS)
+    # =========================================================
+    st.subheader("🤖 Prompts Maestros de los Agentes")
+    st.markdown("Edita el comportamiento base de las IA. Las llaves internas están protegidas por el código.")
+    
+    col_agente1, col_agente2 = st.columns(2)
+    
+    # --- AGENTE 1: EXTRACTOR ---
+    with col_agente1:
+        with st.expander("🛠️ Agente 1: Extractor de Catálogos", expanded=True):
+            with st.form("form_extraccion"):
+                reglas_ext = obtener_configuracion_global('reglas_comunes_extraccion')
+                nuevas_reglas_ext = st.text_area("Prompt Base (Extracción a JSON):", value=reglas_ext, height=400)
+                
+                if st.form_submit_button("💾 Guardar Extractor", type="primary", use_container_width=True):
+                    exito, msg = guardar_configuracion_global('reglas_comunes_extraccion', nuevas_reglas_ext)
+                    if exito:
+                        st.success("¡Extractor actualizado!")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+    # --- AGENTE 2: EVALUADOR ---
+    with col_agente2:
+        with st.expander("⚖️ Agente 2: Evaluador de Licitaciones", expanded=True):
+            with st.form("form_evaluador"):
+                reglas_ev = obtener_configuracion_global('reglas_comunes_evaluador')
+                nuevas_reglas_ev = st.text_area("Prompt Base (Dictamen Técnico):", value=reglas_ev, height=400)
+                
+                if st.form_submit_button("💾 Guardar Evaluador", type="primary", use_container_width=True):
+                    exito, msg = guardar_configuracion_global('reglas_comunes_evaluador', nuevas_reglas_ev)
+                    if exito:
+                        st.success("¡Evaluador actualizado!")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+    
+    st.divider()
     
     # Leemos directo de la Base de Datos
     plantillas = obtener_todas_las_plantillas()

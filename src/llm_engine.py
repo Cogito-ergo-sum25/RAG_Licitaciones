@@ -3,29 +3,17 @@ import json
 import re
 
 def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
+    import ollama
+    from src.db_client import obtener_configuracion_global
+    
     print(f"Iniciando evaluación profunda con el modelo {modelo}...\n")
     
-    prompt_maestro = f"""
-    Eres un perito dictaminador biomédico evaluando el cumplimiento técnico de un equipo médico para una licitación del IMSS.
-    Compara los requisitos de la licitación contra el JSON del equipo.
+    # 1. Traemos las reglas del evaluador desde MySQL
+    reglas_evaluador = obtener_configuracion_global('reglas_comunes_evaluador')
     
-    REGLAS DE EVALUACIÓN Y COLORES (INQUEBRANTABLES):
-    🟢 [CUMPLE / SUPERA]: El equipo cumple exactamente o SUPERA el requerimiento. 
-        - Ejemplo: Piden 185 kg, el JSON dice 450 kg -> 🟢 [CUMPLE / SUPERA].
-        - Ejemplo: Piden 210 cm +/- 10 cm, el JSON dice 205 cm -> 🟢 [CUMPLE / SUPERA].
-    🔵 [SIMILAR]: El equipo no cumple exactamente al 100%, pero el rango o tecnología es similar y funcionalmente aceptable.
-        - Ejemplo: Piden diámetro de 7 a 30 cm, el JSON dice de 12 a 30 cm -> 🔵 [SIMILAR].
-    🟡 [SIN INFORMACIÓN]: El catálogo/JSON no menciona este punto, está vacío [], o el valor es 0. PROHIBIDO INFERIR.
-        - Ejemplo: Piden manuales y el JSON no dice nada -> 🟡 [SIN INFORMACIÓN].
-        - Ejemplo: Piden accesorios y el array está vacío -> 🟡 [SIN INFORMACIÓN].
-    🔴 [NO CUMPLE]: La especificación del equipo es inferior, contradice o no alcanza el requerimiento.
-        - Ejemplo: Piden tablero giratorio y el JSON dice false -> 🔴 [NO CUMPLE].
-
-    FORMATO DE SALIDA (ESTRICTO MARKDOWN TABLE):
-    | Requisito Original | Dictamen Técnico |
-    |---|---|
-    | 1.1.- Texto del requisito | 🟢 [CUMPLE / SUPERA]: Justificación citando el JSON exacto. |
-    | 1.2.- Texto del requisito | 🟡 [SIN INFORMACIÓN]: El JSON no especifica este dato. |
+    # 2. Construimos el prompt final inyectando la licitación y el JSON
+    prompt_maestro = f"""
+    {reglas_evaluador}
 
     --- TEXTO DE LA LICITACIÓN ---
     {texto_licitacion}
@@ -54,7 +42,8 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
 def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.5:14b"):
     import json
     import re
-    from src.db_client import obtener_todas_las_plantillas
+    # Solo necesitamos las plantillas y el prompt maestro
+    from src.db_client import obtener_todas_las_plantillas, obtener_configuracion_global
     
     print(f"Iniciando Extracción Técnica Pura con {modelo}...\n")
     
@@ -66,29 +55,19 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
     except:
         tag_equipo = "OTRO"
 
-    # 1. REGLAS BASE OBLIGATORIAS (Pura extracción técnica)
-    reglas_comunes = f"""
-    INSTRUCCIONES DE EXTRACCIÓN (NIVEL PERITO ESTRICTO):
-    1. Extrae los valores y llena la <PLANTILLA_BASE>.
-    2. REGLA DE BOOLEANOS: Si el catálogo NO menciona una característica en absoluto, pon `false` o `null`. ¡PROHIBIDO ASUMIR!
-    3. TRADUCCIÓN: Traduce al español clínico de México (Ej: "Stainless steel" -> "Acero Inoxidable").
-    4. ESTRUCTURA ESTRICTA: ESTÁ ESTRICTAMENTE PROHIBIDO INVENTAR LLAVES NUEVAS. Utiliza ÚNICAMENTE las llaves exactas que vienen en la <PLANTILLA_BASE>.
-    
-    <MATRIZ_DE_REFERENCIAS>
-    - Agrega una llave obligatoria llamada "referencias_paginas" DENTRO del objeto JSON principal, ANTES de la llave de cierre final '}}'.
-    - ¡REGLA DE SINTAXIS ESTRICTA!: "referencias_paginas" DEBE ser un objeto JSON anidado que mapee CADA UNA de las variables.
-    - OBLIGATORIO poner una coma "," antes de abrir "referencias_paginas".
-    </MATRIZ_DE_REFERENCIAS>
-    """
+    # 1. REGLAS BASE OBLIGATORIAS (Jaladas directo de MySQL, sin inyecciones raras)
+    reglas_comunes = obtener_configuracion_global(
+        clave='reglas_comunes_extraccion', 
+        valor_por_defecto="Extrae la información basándote en la <PLANTILLA_BASE>."
+    )
 
-    # 2. CARGAMOS LAS REGLAS ESPECÍFICAS DESDE MYSQL (Usando etiqueta genérica)
+    # 2. CARGAMOS LAS REGLAS ESPECÍFICAS DESDE MYSQL
     reglas_especificas = "<REGLAS_GENERALES>Extrae la información lo más apegado al texto posible.</REGLAS_GENERALES>"
     catalogo_plantillas = obtener_todas_las_plantillas()
     
     if tag_equipo in catalogo_plantillas:
         reglas_crud = catalogo_plantillas[tag_equipo].get("reglas_especificas", "").strip()
         if reglas_crud:
-            # Etiqueta genérica, ya no dependemos del nombre del TAG
             reglas_especificas = f"<REGLAS_ESPECIALIZADAS>\n{reglas_crud}\n</REGLAS_ESPECIALIZADAS>"
 
     # 3. ARMAMOS EL PROMPT FINAL MAESTRO

@@ -204,3 +204,39 @@ def guardar_plantilla_bd(tag, nombre_boton, reglas_especificas, esquema_dict):
     finally:
         if 'conexion' in locals():
             conexion.close()
+
+def obtener_configuracion_global(clave, valor_por_defecto=""):
+    """Trae cualquier configuración global desde MySQL según su clave"""
+    try:
+        conexion = obtener_conexion()
+        with conexion.cursor() as cursor:
+            cursor.execute("SELECT valor FROM ai_configuracion_global WHERE clave = %s", (clave,))
+            resultado = cursor.fetchone()
+            if resultado:
+                return resultado['valor']
+            return valor_por_defecto
+    except Exception as e:
+        print(f"Error al obtener configuración '{clave}': {e}")
+        return valor_por_defecto
+    finally:
+        if 'conexion' in locals():
+            conexion.close()
+
+def guardar_configuracion_global(clave, valor):
+    """Actualiza o inserta cualquier configuración global en MySQL"""
+    try:
+        conexion = obtener_conexion()
+        with conexion.cursor() as cursor:
+            sql = """
+                INSERT INTO ai_configuracion_global (clave, valor) 
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE valor = VALUES(valor)
+            """
+            cursor.execute(sql, (clave, valor))
+        conexion.commit()
+        return True, f"Configuración '{clave}' actualizada correctamente."
+    except Exception as e:
+        return False, f"Error al guardar configuración '{clave}': {e}"
+    finally:
+        if 'conexion' in locals():
+            conexion.close()
