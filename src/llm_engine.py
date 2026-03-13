@@ -54,9 +54,9 @@ def evaluar_con_ia(texto_licitacion, json_equipo, modelo="qwen2.5:14b"):
 def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.5:14b"):
     import json
     import re
-    import os
+    from src.db_client import obtener_todas_las_plantillas
     
-    print(f"Iniciando Extracción Nivel Perito Enrutada con {modelo}...\n")
+    print(f"Iniciando Extracción Técnica Pura con {modelo}...\n")
     
     texto_seguro = texto_catalogo[:40000] 
     
@@ -66,45 +66,34 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
     except:
         tag_equipo = "OTRO"
 
-    # 1. REGLAS BASE OBLIGATORIAS PARA TODOS LOS EQUIPOS
-    reglas_comunes = """
+    # 1. REGLAS BASE OBLIGATORIAS (Pura extracción técnica)
+    reglas_comunes = f"""
     INSTRUCCIONES DE EXTRACCIÓN (NIVEL PERITO ESTRICTO):
     1. Extrae los valores y llena la <PLANTILLA_BASE>.
     2. REGLA DE BOOLEANOS: Si el catálogo NO menciona una característica en absoluto, pon `false` o `null`. ¡PROHIBIDO ASUMIR!
     3. TRADUCCIÓN: Traduce al español clínico de México (Ej: "Stainless steel" -> "Acero Inoxidable").
-    4. ESTRUCTURA ESTRICTA: ESTÁ ESTRICTAMENTE PROHIBIDO INVENTAR LLAVES NUEVAS. Utiliza ÚNICAMENTE las llaves exactas que vienen en la <PLANTILLA_BASE>. Si no hay datos, usa null o 0, pero respeta la estructura original.
+    4. ESTRUCTURA ESTRICTA: ESTÁ ESTRICTAMENTE PROHIBIDO INVENTAR LLAVES NUEVAS. Utiliza ÚNICAMENTE las llaves exactas que vienen en la <PLANTILLA_BASE>.
     
     <MATRIZ_DE_REFERENCIAS>
-    - Agrega una llave obligatoria llamada "referencias_paginas" DENTRO del objeto JSON principal, ANTES de la llave de cierre final '}'.
-    - ¡REGLA DE SINTAXIS ESTRICTA!: "referencias_paginas" DEBE ser un objeto JSON anidado que mapee CADA UNA de las variables, NO un string y NO puede estar vacío.
+    - Agrega una llave obligatoria llamada "referencias_paginas" DENTRO del objeto JSON principal, ANTES de la llave de cierre final '}}'.
+    - ¡REGLA DE SINTAXIS ESTRICTA!: "referencias_paginas" DEBE ser un objeto JSON anidado que mapee CADA UNA de las variables.
     - OBLIGATORIO poner una coma "," antes de abrir "referencias_paginas".
-    - Ejemplo del formato EXACTO que debes usar dentro de la plantilla:
-      "referencias_paginas": {
-          "potencia_maxima_watts": "Página 1",
-          "intensidad_luminosa_luxes": "Página 2",
-          "control_por_microprocesador": "No encontrado"
-      }
-    - Mapea todas las llaves. Si encontraste el dato, pon la "Página X". Si NO lo encontraste, pon "No encontrado".
     </MATRIZ_DE_REFERENCIAS>
     """
 
-    # 2. CARGAMOS LAS REGLAS ESPECÍFICAS DINÁMICAMENTE DESDE EL ARCHIVO JSON
+    # 2. CARGAMOS LAS REGLAS ESPECÍFICAS DESDE MYSQL (Usando etiqueta genérica)
     reglas_especificas = "<REGLAS_GENERALES>Extrae la información lo más apegado al texto posible.</REGLAS_GENERALES>"
-    ruta_plantillas = "plantillas_equipos.json"
+    catalogo_plantillas = obtener_todas_las_plantillas()
     
-    if os.path.exists(ruta_plantillas):
-        with open(ruta_plantillas, "r", encoding="utf-8") as f:
-            catalogo_plantillas = json.load(f)
-            # Si el TAG existe en el archivo, extraemos sus reglas
-            if tag_equipo in catalogo_plantillas:
-                reglas_crud = catalogo_plantillas[tag_equipo].get("reglas_especificas", "").strip()
-                
-                if reglas_crud:
-                    reglas_especificas = f"<REGLAS_ESPECIALIZADAS_PARA_{tag_equipo}>\n{reglas_crud}\n</REGLAS_ESPECIALIZADAS_PARA_{tag_equipo}>"
+    if tag_equipo in catalogo_plantillas:
+        reglas_crud = catalogo_plantillas[tag_equipo].get("reglas_especificas", "").strip()
+        if reglas_crud:
+            # Etiqueta genérica, ya no dependemos del nombre del TAG
+            reglas_especificas = f"<REGLAS_ESPECIALIZADAS>\n{reglas_crud}\n</REGLAS_ESPECIALIZADAS>"
 
     # 3. ARMAMOS EL PROMPT FINAL MAESTRO
     prompt = f"""
-    Eres un Perito Biomédico especialista en dictaminar equipos médicos.
+    Eres un Perito Biomédico especialista en dictaminar especificaciones técnicas de equipos médicos.
     
     <CATALOGO>
     {texto_seguro}
@@ -135,9 +124,8 @@ def autocompletar_json_con_ia(texto_catalogo, json_plantilla_str, modelo="qwen2.
         if match:
             texto_json_limpio = match.group(0)
             
-            # --- ESCUDO 1: Si olvidó la coma antes de abrir referencias ---
+            # --- ESCUDOS DE SINTAXIS ---
             texto_json_limpio = re.sub(r'(\]|\}|"|true|false|null)\s*"referencias_paginas"', r'\1,\n    "referencias_paginas"', texto_json_limpio)
-            # --- ESCUDO 2: Si cerró el JSON principal antes de tiempo ---
             texto_json_limpio = re.sub(r'\}\s*,\s*"referencias_paginas"', r',\n    "referencias_paginas"', texto_json_limpio)
             
             try:

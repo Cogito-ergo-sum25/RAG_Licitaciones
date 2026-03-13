@@ -3,7 +3,7 @@ import json
 import os
 from src.pdf_parser import extraer_texto_pdf
 from src.llm_engine import autocompletar_json_con_ia
-from src.db_client import obtener_todos_los_productos, obtener_json_producto, guardar_json_producto
+from src.db_client import obtener_todos_los_productos, obtener_json_producto, guardar_json_producto, obtener_todas_las_plantillas
 
 def render_tab2():
     st.header("Gestor de Especificaciones Técnicas")
@@ -114,15 +114,14 @@ def render_tab2():
                 st.session_state[area_key] = texto_inicial
 
             # ==================================================
-            # --- EL MOTOR DE PLANTILLAS DINÁMICO (LA MAGIA) ---
+            # --- EL MOTOR DE PLANTILLAS DINÁMICO (MODO MYSQL) ---
             # ==================================================
             st.write("¿El JSON está vacío? Carga una estructura base rica en especificaciones:")
             
-            ruta_plantillas = "plantillas_equipos.json"
-            if os.path.exists(ruta_plantillas):
-                with open(ruta_plantillas, "r", encoding="utf-8") as f:
-                    catalogo_plantillas = json.load(f)
-                
+            # 🔥 Aquí está el cambio: Ya no leemos el archivo, leemos la BD
+            catalogo_plantillas = obtener_todas_las_plantillas()
+            
+            if catalogo_plantillas:
                 col_sel, col_btn = st.columns([3, 1])
                 
                 with col_sel:
@@ -140,7 +139,7 @@ def render_tab2():
                         st.session_state[area_key] = texto_plantilla
                         st.rerun()
             else:
-                st.warning("⚠️ No se encontró el archivo 'plantillas_equipos.json'. Ve a la Pestaña 3 para crear plantillas.")
+                st.warning("⚠️ No hay plantillas en la Base de Datos. Ve a la Pestaña 3 para crearlas.")
 
 
             # --- AUTOCOMPLETADO CON IA ---

@@ -127,3 +127,80 @@ def obtener_equipos_por_tag(tag_buscado):
     finally:
         if 'conexion' in locals():
             conexion.close()
+
+def obtener_lista_tipos_maestra():
+    """Trae la lista viva de tipos de producto desde MySQL"""
+    try:
+        conexion = obtener_conexion()
+        with conexion.cursor() as cursor:
+            cursor.execute("SELECT nombre FROM tipos_producto ORDER BY nombre ASC")
+            # Convertimos los resultados en una lista simple de strings
+            return [fila['nombre'] for fila in cursor.fetchall()]
+    except Exception as e:
+        print(f"Error al obtener tipos: {e}")
+        return []
+    finally:
+        if 'conexion' in locals():
+            conexion.close()
+
+def obtener_lista_clasificaciones_maestra():
+    """Trae la lista viva de clasificaciones desde MySQL"""
+    try:
+        conexion = obtener_conexion()
+        with conexion.cursor() as cursor:
+            cursor.execute("SELECT nombre FROM clasificaciones ORDER BY nombre ASC")
+            return [fila['nombre'] for fila in cursor.fetchall()]
+    except Exception as e:
+        print(f"Error al obtener clasificaciones: {e}")
+        return []
+    finally:
+        if 'conexion' in locals():
+            conexion.close()
+
+def obtener_todas_las_plantillas():
+    """Trae las plantillas de la BD y las formatea como diccionario"""
+    try:
+        conexion = obtener_conexion()
+        with conexion.cursor() as cursor:
+            sql = "SELECT tag_licitacion, nombre_boton, reglas_especificas, esquema_base FROM ai_plantillas_extraccion"
+            cursor.execute(sql)
+            resultados = cursor.fetchall()
+            
+            plantillas_dict = {}
+            for fila in resultados:
+                # Convertimos el JSON de texto de MySQL a un diccionario de Python
+                plantillas_dict[fila['tag_licitacion']] = {
+                    "nombre_boton": fila['nombre_boton'],
+                    "reglas_especificas": fila['reglas_especificas'],
+                    "esquema": json.loads(fila['esquema_base'])
+                }
+            return plantillas_dict
+    except Exception as e:
+        print(f"Error al obtener plantillas de BD: {e}")
+        return {}
+    finally:
+        if 'conexion' in locals():
+            conexion.close()
+
+def guardar_plantilla_bd(tag, nombre_boton, reglas_especificas, esquema_dict):
+    """Inserta o actualiza una plantilla en MySQL"""
+    try:
+        conexion = obtener_conexion()
+        with conexion.cursor() as cursor:
+            esquema_json = json.dumps(esquema_dict, ensure_ascii=False)
+            sql = """
+                INSERT INTO ai_plantillas_extraccion (tag_licitacion, nombre_boton, reglas_especificas, esquema_base)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    nombre_boton = VALUES(nombre_boton),
+                    reglas_especificas = VALUES(reglas_especificas),
+                    esquema_base = VALUES(esquema_base)
+            """
+            cursor.execute(sql, (tag, nombre_boton, reglas_especificas, esquema_json))
+        conexion.commit()
+        return True, "Plantilla guardada correctamente en BD."
+    except Exception as e:
+        return False, f"Error al guardar plantilla en BD: {e}"
+    finally:
+        if 'conexion' in locals():
+            conexion.close()
